@@ -65,50 +65,50 @@ class _AttendanceDashboardState extends State<AttendanceDashboard> {
         ),
       ),
       body: SafeArea(
-        child: Column(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            SizedBox(
-              height: 44,
-              child: Container(
-                color: _kSheetColor,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    IconButton(
-                      onPressed: () => setState(() {
-                        _year--;
-                        _selectedDate = null;
-                      }),
-                      visualDensity: VisualDensity.compact,
-                      icon: const Icon(Icons.chevron_left),
-                    ),
-                    Text(
-                      '$_year',
-                      style: const TextStyle(
-                        color: _kPrimaryColor,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w700,
+            Expanded(
+              child: Column(
+                children: [
+                  SizedBox(
+                    height: 44,
+                    child: Container(
+                      color: _kSheetColor,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          IconButton(
+                            onPressed: () => setState(() {
+                              _year--;
+                              _selectedDate = null;
+                            }),
+                            visualDensity: VisualDensity.compact,
+                            icon: const Icon(Icons.chevron_left),
+                          ),
+                          Text(
+                            '$_year',
+                            style: const TextStyle(
+                              color: _kPrimaryColor,
+                              fontSize: 20,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          IconButton(
+                            onPressed: () => setState(() {
+                              _year++;
+                              _selectedDate = null;
+                            }),
+                            visualDensity: VisualDensity.compact,
+                            icon: const Icon(Icons.chevron_right),
+                          ),
+                        ],
                       ),
                     ),
-                    IconButton(
-                      onPressed: () => setState(() {
-                        _year++;
-                        _selectedDate = null;
-                      }),
-                      visualDensity: VisualDensity.compact,
-                      icon: const Icon(Icons.chevron_right),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            Expanded(
-              child: Container(
-                color: _kSheetColor,
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Expanded(
+                  ),
+                  Expanded(
+                    child: Container(
+                      color: _kSheetColor,
                       child: GridView.builder(
                         padding: const EdgeInsets.fromLTRB(6, 4, 2, 0),
                         itemCount: 12,
@@ -135,47 +135,48 @@ class _AttendanceDashboardState extends State<AttendanceDashboard> {
                         },
                       ),
                     ),
-                    _StatusStrip(palette: palette),
-                  ],
-                ),
-              ),
-            ),
-            Container(
-              width: double.infinity,
-              color: _kSheetColor,
-              padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
-              child: Column(
-                children: [
-                  if (_selectedDate != null)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 6),
-                      child: Text(
-                        'Selected: ${_formatDate(_selectedDate!)}',
-                        style: const TextStyle(
-                          color: _kPrimaryColor,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  SizedBox(
+                  ),
+                  Container(
                     width: double.infinity,
-                    child: FilledButton(
-                      onPressed:
-                          _selectedDate == null ? null : () => _openMarkAttendance(),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: _kPrimaryColor,
-                        disabledBackgroundColor: Colors.black26,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(6),
+                    color: _kSheetColor,
+                    padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
+                    child: Column(
+                      children: [
+                        if (_selectedDate != null)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 6),
+                            child: Text(
+                              'Selected: ${_formatDate(_selectedDate!)}',
+                              style: const TextStyle(
+                                color: _kPrimaryColor,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton(
+                            onPressed: _selectedDate == null
+                                ? null
+                                : () => _openMarkAttendance(),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: _kPrimaryColor,
+                              disabledBackgroundColor: Colors.black26,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                            ),
+                            child: const Text('Mark Attendance'),
+                          ),
                         ),
-                      ),
-                      child: const Text('Mark Attendance'),
+                      ],
                     ),
                   ),
                 ],
               ),
             ),
+            _StatusStrip(palette: palette),
           ],
         ),
       ),
