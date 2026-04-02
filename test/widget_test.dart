@@ -1,12 +1,15 @@
 import 'package:daily_attendance/main.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   testWidgets('marks attendance after selecting a day and status', (
     WidgetTester tester,
   ) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+
     await tester.pumpWidget(const MyApp());
-    await tester.pump();
+    await tester.pumpAndSettle();
 
     final String currentYear = DateTime.now().year.toString();
 
@@ -29,11 +32,6 @@ void main() {
 
     await tester.tap(find.text('Submit'));
     await tester.pump(const Duration(milliseconds: 200));
-
-    expect(find.text('Confirm Attendance'), findsOneWidget);
-
-    await tester.tap(find.text('Yes'));
-    await tester.pump();
     await tester.pump(const Duration(seconds: 1));
 
     expect(find.textContaining('marked for'), findsOneWidget);

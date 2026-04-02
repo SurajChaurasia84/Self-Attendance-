@@ -1,10 +1,21 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 const Color _kPrimaryColor = Color(0xFF0A1F33);
 const Color _kSheetColor = Color(0xFFF8F5BE);
 const Color _kSundayColor = Color(0xFFD3D3D3);
+const bool _kIsFlutterTest = bool.fromEnvironment('FLUTTER_TEST');
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  if (!_kIsFlutterTest) {
+    await MobileAds.instance.initialize();
+  }
   runApp(const MyApp());
 }
 
@@ -41,20 +52,31 @@ class AttendanceDashboard extends StatefulWidget {
 }
 
 class _AttendanceDashboardState extends State<AttendanceDashboard> {
+  static const String _kStoredYearKey = 'attendance_selected_year';
+  static const String _kStoredDateKey = 'attendance_selected_date';
+  static const String _kStoredMarksKey = 'attendance_marks';
+
   late int _year;
   DateTime? _selectedDate;
   final Map<DateTime, AttendanceStatus> _attendanceMarks =
       <DateTime, AttendanceStatus>{};
+  bool _isLoaded = false;
 
   @override
   void initState() {
     super.initState();
-    _year = DateTime.now().year;
+    final DateTime today = DateTime.now();
+    _year = today.year;
+    _selectedDate = DateTime(today.year, today.month, today.day);
+    _loadSavedAttendance();
   }
 
   @override
   Widget build(BuildContext context) {
     final CalendarPalette palette = CalendarPalette();
+    final AttendanceStatus? selectedDateStatus = _selectedDate == null
+        ? null
+        : _attendanceMarks[_normalizeDate(_selectedDate!)];
 
     return Scaffold(
       appBar: AppBar(
@@ -79,10 +101,7 @@ class _AttendanceDashboardState extends State<AttendanceDashboard> {
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           IconButton(
-                            onPressed: () => setState(() {
-                              _year--;
-                              _selectedDate = null;
-                            }),
+                            onPressed: () => _changeYear(-1),
                             visualDensity: VisualDensity.compact,
                             icon: const Icon(Icons.chevron_left),
                           ),
@@ -95,10 +114,7 @@ class _AttendanceDashboardState extends State<AttendanceDashboard> {
                             ),
                           ),
                           IconButton(
-                            onPressed: () => setState(() {
-                              _year++;
-                              _selectedDate = null;
-                            }),
+                            onPressed: () => _changeYear(1),
                             visualDensity: VisualDensity.compact,
                             icon: const Icon(Icons.chevron_right),
                           ),
@@ -109,30 +125,46 @@ class _AttendanceDashboardState extends State<AttendanceDashboard> {
                   Expanded(
                     child: Container(
                       color: _kSheetColor,
-                      child: GridView.builder(
-                        padding: const EdgeInsets.fromLTRB(6, 4, 2, 0),
-                        itemCount: 12,
-                        physics: const BouncingScrollPhysics(),
-                        gridDelegate:
-                            const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 3,
-                              mainAxisSpacing: 10,
-                              crossAxisSpacing: 8,
-                              childAspectRatio: 0.82,
-                            ),
-                        itemBuilder: (BuildContext context, int index) {
-                          return _MiniMonth(
-                            monthDate: DateTime(_year, index + 1),
-                            palette: palette,
-                            selectedDate: _selectedDate,
-                            attendanceMarks: _attendanceMarks,
-                            onDayTap: (DateTime day) {
-                              setState(() {
-                                _selectedDate = day;
-                              });
+                      child: Stack(
+                        children: [
+                          GridView.builder(
+                            padding: const EdgeInsets.fromLTRB(6, 4, 2, 0),
+                            itemCount: 12,
+                            physics: const BouncingScrollPhysics(),
+                            gridDelegate:
+                                const SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: 3,
+                                  mainAxisSpacing: 10,
+                                  crossAxisSpacing: 8,
+                                  childAspectRatio: 0.82,
+                                ),
+                            itemBuilder: (BuildContext context, int index) {
+                              return _MiniMonth(
+                                monthDate: DateTime(_year, index + 1),
+                                palette: palette,
+                                selectedDate: _selectedDate,
+                                attendanceMarks: _attendanceMarks,
+                                onDayTap: (DateTime day) async {
+                                  setState(() {
+                                    _selectedDate = day;
+                                  });
+                                  await _persistAttendance();
+                                },
+                              );
                             },
-                          );
-                        },
+                          ),
+                          if (!_isLoaded)
+                            const Positioned.fill(
+                              child: ColoredBox(
+                                color: Color(0x66F8F5BE),
+                                child: Center(
+                                  child: CircularProgressIndicator(
+                                    color: _kPrimaryColor,
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
                     ),
                   ),
@@ -157,7 +189,7 @@ class _AttendanceDashboardState extends State<AttendanceDashboard> {
                         SizedBox(
                           width: double.infinity,
                           child: FilledButton(
-                            onPressed: _selectedDate == null
+                            onPressed: _selectedDate == null || selectedDateStatus != null
                                 ? null
                                 : () => _openMarkAttendance(),
                             style: FilledButton.styleFrom(
@@ -167,11 +199,21 @@ class _AttendanceDashboardState extends State<AttendanceDashboard> {
                                 borderRadius: BorderRadius.circular(6),
                               ),
                             ),
-                            child: const Text('Mark Attendance'),
+                            child: Text(
+                              selectedDateStatus == null
+                                  ? 'Mark Attendance'
+                                  : 'Attendance Marked',
+                            ),
                           ),
                         ),
                       ],
                     ),
+                  ),
+                  Container(
+                    width: double.infinity,
+                    color: Colors.white,
+                    padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
+                    child: const _BannerAdSection(),
                   ),
                 ],
               ),
@@ -248,36 +290,10 @@ class _AttendanceDashboardState extends State<AttendanceDashboard> {
       return;
     }
 
-    final bool confirmed = await showDialog<bool>(
-          context: context,
-          builder: (BuildContext context) {
-            return AlertDialog(
-              title: const Text('Confirm Attendance'),
-              content: Text(
-                'Mark ${submittedStatus.label} for ${_formatDate(selectedDate)}?',
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(false),
-                  child: const Text('No'),
-                ),
-                FilledButton(
-                  onPressed: () => Navigator.of(context).pop(true),
-                  child: const Text('Yes'),
-                ),
-              ],
-            );
-          },
-        ) ??
-        false;
-
-    if (!confirmed) {
-      return;
-    }
-
     setState(() {
       _attendanceMarks[_normalizeDate(selectedDate)] = submittedStatus;
     });
+    await _persistAttendance();
 
     if (!mounted) {
       return;
@@ -294,6 +310,78 @@ class _AttendanceDashboardState extends State<AttendanceDashboard> {
 
   DateTime _normalizeDate(DateTime date) {
     return DateTime(date.year, date.month, date.day);
+  }
+
+  void _changeYear(int delta) {
+    setState(() {
+      _year += delta;
+      _selectedDate = null;
+    });
+    _persistAttendance();
+  }
+
+  Future<void> _loadSavedAttendance() async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    final DateTime today = DateTime.now();
+    final int savedYear = prefs.getInt(_kStoredYearKey) ?? today.year;
+    final String? savedDate = prefs.getString(_kStoredDateKey);
+    final String? savedMarks = prefs.getString(_kStoredMarksKey);
+    final Map<DateTime, AttendanceStatus> parsedMarks =
+        <DateTime, AttendanceStatus>{};
+
+    if (savedMarks != null && savedMarks.isNotEmpty) {
+      final Map<String, dynamic> rawMap =
+          jsonDecode(savedMarks) as Map<String, dynamic>;
+      for (final MapEntry<String, dynamic> entry in rawMap.entries) {
+        final DateTime? date = DateTime.tryParse(entry.key);
+        AttendanceStatus? matchedStatus;
+        for (final AttendanceStatus status in AttendanceStatus.values) {
+          if (status.name == entry.value) {
+            matchedStatus = status;
+            break;
+          }
+        }
+        if (date != null && matchedStatus != null) {
+          parsedMarks[_normalizeDate(date)] = matchedStatus;
+        }
+      }
+    }
+
+    DateTime? restoredDate;
+    if (savedDate != null && savedDate.isNotEmpty) {
+      restoredDate = DateTime.tryParse(savedDate);
+    } else {
+      restoredDate = DateTime(today.year, today.month, today.day);
+    }
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _year = savedYear;
+      _selectedDate = restoredDate == null ? null : _normalizeDate(restoredDate);
+      _attendanceMarks
+        ..clear()
+        ..addAll(parsedMarks);
+      _isLoaded = true;
+    });
+  }
+
+  Future<void> _persistAttendance() async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    final Map<String, String> encodedMarks = <String, String>{};
+
+    for (final MapEntry<DateTime, AttendanceStatus> entry in _attendanceMarks.entries) {
+      encodedMarks[entry.key.toIso8601String()] = entry.value.name;
+    }
+
+    await prefs.setInt(_kStoredYearKey, _year);
+    await prefs.setString(
+      _kStoredDateKey,
+      _selectedDate == null ? '' : _normalizeDate(_selectedDate!).toIso8601String(),
+    );
+    await prefs.setString(_kStoredMarksKey, jsonEncode(encodedMarks));
   }
 
   String _formatDate(DateTime date) {
@@ -584,6 +672,90 @@ class _StatusStrip extends StatelessWidget {
               ),
             )
             .toList(),
+      ),
+    );
+  }
+}
+
+class _BannerAdSection extends StatefulWidget {
+  const _BannerAdSection();
+
+  @override
+  State<_BannerAdSection> createState() => _BannerAdSectionState();
+}
+
+class _BannerAdSectionState extends State<_BannerAdSection> {
+  BannerAd? _bannerAd;
+  bool _isAdLoaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (_shouldLoadRealAds) {
+      _loadBannerAd();
+    }
+  }
+
+  bool get _shouldLoadRealAds => !_kIsFlutterTest && !kIsWeb;
+
+  void _loadBannerAd() {
+    final BannerAd banner = BannerAd(
+      size: AdSize.banner,
+      adUnitId: Platform.isAndroid
+          ? 'ca-app-pub-3940256099942544/6300978111'
+          : 'ca-app-pub-3940256099942544/2934735716',
+      listener: BannerAdListener(
+        onAdLoaded: (Ad ad) {
+          if (!mounted) {
+            ad.dispose();
+            return;
+          }
+          setState(() {
+            _bannerAd = ad as BannerAd;
+            _isAdLoaded = true;
+          });
+        },
+        onAdFailedToLoad: (Ad ad, LoadAdError error) {
+          ad.dispose();
+        },
+      ),
+      request: const AdRequest(),
+    );
+
+    banner.load();
+  }
+
+  @override
+  void dispose() {
+    _bannerAd?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isAdLoaded && _bannerAd != null) {
+      return SizedBox(
+        height: _bannerAd!.size.height.toDouble(),
+        width: _bannerAd!.size.width.toDouble(),
+        child: AdWidget(ad: _bannerAd!),
+      );
+    }
+
+    return Container(
+      height: 56,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: const Color(0xFFF3F4F6),
+        border: Border.all(color: const Color(0xFFD1D5DB)),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: const Text(
+        'Loading Test Banner Ad',
+        style: TextStyle(
+          color: Color(0xFF4B5563),
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+        ),
       ),
     );
   }
