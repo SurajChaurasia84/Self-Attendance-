@@ -1,0 +1,661 @@
+import 'dart:convert';
+
+import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'attendance_models.dart';
+import 'banner_ad_bar.dart';
+import 'month_analytics_screen.dart';
+
+class AttendanceHomeScreen extends StatefulWidget {
+  const AttendanceHomeScreen({super.key});
+
+  @override
+  State<AttendanceHomeScreen> createState() => _AttendanceHomeScreenState();
+}
+
+class _AttendanceHomeScreenState extends State<AttendanceHomeScreen> {
+  static const String _kStoredYearKey = 'attendance_selected_year';
+  static const String _kStoredDateKey = 'attendance_selected_date';
+  static const String _kStoredMarksKey = 'attendance_marks';
+
+  late int _year;
+  DateTime? _selectedDate;
+  final Map<DateTime, AttendanceStatus> _attendanceMarks =
+      <DateTime, AttendanceStatus>{};
+  bool _isLoaded = false;
+  int _adRefreshToken = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    final DateTime today = DateTime.now();
+    _year = today.year;
+    _selectedDate = DateTime(today.year, today.month, today.day);
+    _loadSavedAttendance();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final CalendarPalette palette = CalendarPalette();
+    final AttendanceStatus? selectedDateStatus = _selectedDate == null
+        ? null
+        : _attendanceMarks[_normalizeDate(_selectedDate!)];
+
+    return Scaffold(
+      appBar: AppBar(
+        centerTitle: false,
+        title: const Text(
+          'Daily Attendance',
+          style: TextStyle(fontWeight: FontWeight.w700),
+        ),
+      ),
+      bottomNavigationBar: BannerAdBar(refreshToken: _adRefreshToken),
+      body: SafeArea(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: Column(
+                children: [
+                  SizedBox(
+                    height: 44,
+                    child: Container(
+                      color: kSheetColor,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          IconButton(
+                            onPressed: () => _changeYear(-1),
+                            visualDensity: VisualDensity.compact,
+                            icon: const Icon(Icons.chevron_left),
+                          ),
+                          Text(
+                            '$_year',
+                            style: const TextStyle(
+                              color: kPrimaryColor,
+                              fontSize: 20,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          IconButton(
+                            onPressed: () => _changeYear(1),
+                            visualDensity: VisualDensity.compact,
+                            icon: const Icon(Icons.chevron_right),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: Container(
+                      color: kSheetColor,
+                      child: Stack(
+                        children: [
+                          GridView.builder(
+                            padding: const EdgeInsets.fromLTRB(6, 4, 2, 0),
+                            itemCount: 12,
+                            physics: const BouncingScrollPhysics(),
+                            gridDelegate:
+                                const SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: 3,
+                                  mainAxisSpacing: 10,
+                                  crossAxisSpacing: 8,
+                                  childAspectRatio: 0.82,
+                                ),
+                            itemBuilder: (BuildContext context, int index) {
+                              return _MiniMonth(
+                                monthDate: DateTime(_year, index + 1),
+                                selectedDate: _selectedDate,
+                                attendanceMarks: _attendanceMarks,
+                                onMonthTap: (DateTime month) =>
+                                    _openMonthAnalyticsScreen(month),
+                                onDayTap: (DateTime day) async {
+                                  setState(() {
+                                    _selectedDate = day;
+                                  });
+                                  await _persistAttendance();
+                                },
+                              );
+                            },
+                          ),
+                          if (!_isLoaded)
+                            const Positioned.fill(
+                              child: ColoredBox(
+                                color: Color(0x66F8F5BE),
+                                child: Center(
+                                  child: CircularProgressIndicator(
+                                    color: kPrimaryColor,
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  Container(
+                    width: double.infinity,
+                    color: kSheetColor,
+                    padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
+                    child: Column(
+                      children: [
+                        if (_selectedDate != null)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 6),
+                            child: Text(
+                              'Selected: ${_formatDate(_selectedDate!)}',
+                              style: const TextStyle(
+                                color: kPrimaryColor,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton(
+                            onPressed: _selectedDate == null || selectedDateStatus != null
+                                ? null
+                                : () => _openMarkAttendance(),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: kPrimaryColor,
+                              disabledBackgroundColor: Colors.black26,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                            ),
+                            child: Text(
+                              selectedDateStatus == null
+                                  ? 'Mark Attendance'
+                                  : 'Attendance Marked',
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            _StatusStrip(palette: palette),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openMonthAnalyticsScreen(DateTime monthDate) async {
+    final Map<AttendanceStatus, int> counts = <AttendanceStatus, int>{
+      for (final AttendanceStatus status in AttendanceStatus.values) status: 0,
+    };
+
+    int totalMarked = 0;
+    for (final MapEntry<DateTime, AttendanceStatus> entry in _attendanceMarks.entries) {
+      final DateTime date = entry.key;
+      if (date.year == monthDate.year && date.month == monthDate.month) {
+        counts[entry.value] = (counts[entry.value] ?? 0) + 1;
+        totalMarked++;
+      }
+    }
+
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => MonthAnalyticsScreen(
+          monthDate: monthDate,
+          counts: counts,
+          totalMarked: totalMarked,
+          attendanceMarks: _attendanceMarks,
+        ),
+      ),
+    );
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _adRefreshToken++;
+    });
+  }
+
+  Future<void> _openMarkAttendance() async {
+    final DateTime selectedDate = _selectedDate!;
+    AttendanceStatus? selectedStatus = _attendanceMarks[_normalizeDate(selectedDate)];
+
+    final AttendanceStatus? submittedStatus = await showDialog<AttendanceStatus>(
+      context: context,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setDialogState) {
+            return AlertDialog(
+              title: Text('Mark ${_formatDate(selectedDate)}'),
+              content: SizedBox(
+                width: 320,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: AttendanceStatus.values
+                      .map(
+                        (AttendanceStatus status) => InkWell(
+                          onTap: () {
+                            setDialogState(() {
+                              selectedStatus = status;
+                            });
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  selectedStatus == status
+                                      ? Icons.radio_button_checked
+                                      : Icons.radio_button_off,
+                                  color: status.color,
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(child: Text(status.label)),
+                              ],
+                            ),
+                          ),
+                        ),
+                      )
+                      .toList(),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: selectedStatus == null
+                      ? null
+                      : () => Navigator.of(context).pop(selectedStatus),
+                  child: const Text('Submit'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (!mounted || submittedStatus == null) {
+      return;
+    }
+
+    setState(() {
+      _attendanceMarks[_normalizeDate(selectedDate)] = submittedStatus;
+    });
+    await _persistAttendance();
+
+    if (!mounted) {
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '${submittedStatus.label} marked for ${_formatDate(selectedDate)}',
+        ),
+      ),
+    );
+  }
+
+  DateTime _normalizeDate(DateTime date) {
+    return DateTime(date.year, date.month, date.day);
+  }
+
+  void _changeYear(int delta) {
+    setState(() {
+      _year += delta;
+      _selectedDate = null;
+    });
+    _persistAttendance();
+  }
+
+  Future<void> _loadSavedAttendance() async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    final DateTime today = DateTime.now();
+    final int savedYear = prefs.getInt(_kStoredYearKey) ?? today.year;
+    final String? savedDate = prefs.getString(_kStoredDateKey);
+    final String? savedMarks = prefs.getString(_kStoredMarksKey);
+    final Map<DateTime, AttendanceStatus> parsedMarks =
+        <DateTime, AttendanceStatus>{};
+
+    if (savedMarks != null && savedMarks.isNotEmpty) {
+      final Map<String, dynamic> rawMap =
+          jsonDecode(savedMarks) as Map<String, dynamic>;
+      for (final MapEntry<String, dynamic> entry in rawMap.entries) {
+        final DateTime? date = DateTime.tryParse(entry.key);
+        AttendanceStatus? matchedStatus;
+        for (final AttendanceStatus status in AttendanceStatus.values) {
+          if (status.name == entry.value) {
+            matchedStatus = status;
+            break;
+          }
+        }
+        if (date != null && matchedStatus != null) {
+          parsedMarks[_normalizeDate(date)] = matchedStatus;
+        }
+      }
+    }
+
+    DateTime? restoredDate;
+    if (savedDate != null && savedDate.isNotEmpty) {
+      restoredDate = DateTime.tryParse(savedDate);
+    } else {
+      restoredDate = DateTime(today.year, today.month, today.day);
+    }
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _year = savedYear;
+      _selectedDate = restoredDate == null ? null : _normalizeDate(restoredDate);
+      _attendanceMarks
+        ..clear()
+        ..addAll(parsedMarks);
+      _isLoaded = true;
+    });
+  }
+
+  Future<void> _persistAttendance() async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    final Map<String, String> encodedMarks = <String, String>{};
+
+    for (final MapEntry<DateTime, AttendanceStatus> entry in _attendanceMarks.entries) {
+      encodedMarks[entry.key.toIso8601String()] = entry.value.name;
+    }
+
+    await prefs.setInt(_kStoredYearKey, _year);
+    await prefs.setString(
+      _kStoredDateKey,
+      _selectedDate == null ? '' : _normalizeDate(_selectedDate!).toIso8601String(),
+    );
+    await prefs.setString(_kStoredMarksKey, jsonEncode(encodedMarks));
+  }
+
+  String _formatDate(DateTime date) {
+    return '${date.day}/${date.month}/${date.year}';
+  }
+}
+
+class _MiniMonth extends StatelessWidget {
+  const _MiniMonth({
+    required this.monthDate,
+    required this.selectedDate,
+    required this.attendanceMarks,
+    required this.onMonthTap,
+    required this.onDayTap,
+  });
+
+  final DateTime monthDate;
+  final DateTime? selectedDate;
+  final Map<DateTime, AttendanceStatus> attendanceMarks;
+  final ValueChanged<DateTime> onMonthTap;
+  final ValueChanged<DateTime> onDayTap;
+
+  static const List<String> _weekdays = <String>[
+    'S',
+    'M',
+    'T',
+    'W',
+    'T',
+    'F',
+    'S',
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final List<DateTime?> dayCells = _buildDayCells(monthDate);
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        InkWell(
+          onTap: () => onMonthTap(monthDate),
+          child: Text(
+            monthName(monthDate.month),
+            style: const TextStyle(
+              fontSize: 11,
+              color: Color(0xFFC74D46),
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Row(
+          children: _weekdays
+              .map(
+                (String day) => Expanded(
+                  child: Center(
+                    child: Text(
+                      day,
+                      style: const TextStyle(
+                        fontSize: 9,
+                        color: Color(0xFF5A4637),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ),
+              )
+              .toList(),
+        ),
+        const SizedBox(height: 4),
+        Expanded(
+          child: GridView.builder(
+            padding: EdgeInsets.zero,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: dayCells.length,
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 7,
+              mainAxisSpacing: 0.7,
+              crossAxisSpacing: 0.7,
+              childAspectRatio: 1,
+            ),
+            itemBuilder: (BuildContext context, int index) {
+              final DateTime? day = dayCells[index];
+              if (day == null) {
+                return const SizedBox.shrink();
+              }
+
+              final DateTime normalizedDay = DateTime(day.year, day.month, day.day);
+
+              return _MiniDayCell(
+                day: day,
+                isSunday: day.weekday == DateTime.sunday,
+                isSelected: _isSameDay(selectedDate, day),
+                mark: attendanceMarks[normalizedDay],
+                onTap: () => onDayTap(normalizedDay),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  List<DateTime?> _buildDayCells(DateTime month) {
+    final DateTime firstDay = DateTime(month.year, month.month, 1);
+    final int daysInMonth = DateTime(month.year, month.month + 1, 0).day;
+    final int startOffset = firstDay.weekday % 7;
+    final List<DateTime?> cells = List<DateTime?>.filled(
+      startOffset,
+      null,
+      growable: true,
+    );
+
+    for (int day = 1; day <= daysInMonth; day++) {
+      cells.add(DateTime(month.year, month.month, day));
+    }
+
+    while (cells.length < 42) {
+      cells.add(null);
+    }
+
+    return cells;
+  }
+
+  bool _isSameDay(DateTime? first, DateTime second) {
+    return first != null &&
+        first.year == second.year &&
+        first.month == second.month &&
+        first.day == second.day;
+  }
+}
+
+class _MiniDayCell extends StatelessWidget {
+  const _MiniDayCell({
+    required this.day,
+    required this.isSunday,
+    required this.isSelected,
+    required this.mark,
+    required this.onTap,
+  });
+
+  final DateTime day;
+  final bool isSunday;
+  final bool isSelected;
+  final AttendanceStatus? mark;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        child: CustomPaint(
+          painter: _AttendanceDayPainter(
+            baseColor: isSunday ? kSundayColor : kSheetColor,
+            borderColor: const Color(0xFF808080),
+            markColor: mark?.color,
+            highlightColor: isSelected ? kPrimaryColor : null,
+          ),
+          child: Center(
+            child: Text(
+              '${day.day}',
+              style: const TextStyle(
+                fontSize: 8,
+                color: Color(0xFF4E4E4E),
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AttendanceDayPainter extends CustomPainter {
+  _AttendanceDayPainter({
+    required this.baseColor,
+    required this.borderColor,
+    required this.markColor,
+    required this.highlightColor,
+  });
+
+  final Color baseColor;
+  final Color borderColor;
+  final Color? markColor;
+  final Color? highlightColor;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Rect rect = Offset.zero & size;
+    final Paint basePaint = Paint()..color = baseColor;
+    canvas.drawRect(rect, basePaint);
+
+    if (markColor != null) {
+      final Path filledHalf = Path()
+        ..moveTo(0, size.height)
+        ..lineTo(size.width, size.height)
+        ..lineTo(size.width, 0)
+        ..close();
+      final Paint markPaint = Paint()..color = markColor!;
+      canvas.drawPath(filledHalf, markPaint);
+
+      final Paint diagonalPaint = Paint()
+        ..color = borderColor
+        ..strokeWidth = 0.5
+        ..style = PaintingStyle.stroke;
+      canvas.drawLine(
+        Offset(size.width, 0),
+        Offset(0, size.height),
+        diagonalPaint,
+      );
+    }
+
+    final Paint borderPaint = Paint()
+      ..color = highlightColor ?? borderColor
+      ..strokeWidth = highlightColor == null ? 0.5 : 1.2
+      ..style = PaintingStyle.stroke;
+    canvas.drawRect(rect.deflate(borderPaint.strokeWidth / 2), borderPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _AttendanceDayPainter oldDelegate) {
+    return oldDelegate.baseColor != baseColor ||
+        oldDelegate.borderColor != borderColor ||
+        oldDelegate.markColor != markColor ||
+        oldDelegate.highlightColor != highlightColor;
+  }
+}
+
+class _StatusStrip extends StatelessWidget {
+  const _StatusStrip({required this.palette});
+
+  final CalendarPalette palette;
+
+  @override
+  Widget build(BuildContext context) {
+    final List<_StripItemData> items = <_StripItemData>[
+      _StripItemData('Present', palette.presentColor),
+      _StripItemData('Absent', palette.absentColor),
+      _StripItemData('Half Day', palette.halfDayColor),
+      _StripItemData('Overtime', palette.overtimeColor),
+      _StripItemData('Shift', palette.shiftColor),
+      _StripItemData('Holiday', palette.holidayColor),
+    ];
+
+    return SizedBox(
+      width: 28,
+      child: Column(
+        children: items
+            .map(
+              (_StripItemData item) => Expanded(
+                child: Container(
+                  width: double.infinity,
+                  color: item.color,
+                  alignment: Alignment.center,
+                  child: RotatedBox(
+                    quarterTurns: 1,
+                    child: Text(
+                      item.label,
+                      style: TextStyle(
+                        color: item.color.computeLuminance() > 0.6
+                            ? Colors.black87
+                            : Colors.white,
+                        fontSize: 8,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            )
+            .toList(),
+      ),
+    );
+  }
+}
+
+class _StripItemData {
+  const _StripItemData(this.label, this.color);
+
+  final String label;
+  final Color color;
+}
