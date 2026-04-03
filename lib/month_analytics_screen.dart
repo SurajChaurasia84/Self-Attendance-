@@ -23,19 +23,39 @@ class MonthAnalyticsScreen extends StatefulWidget {
 }
 
 class _MonthAnalyticsScreenState extends State<MonthAnalyticsScreen> {
+  late DateTime _visibleMonth;
   bool _isSaving = false;
+
+  static const List<String> _weekdays = <String>[
+    'SUN',
+    'MON',
+    'TUE',
+    'WED',
+    'THU',
+    'FRI',
+    'SAT',
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _visibleMonth = DateTime(widget.monthDate.year, widget.monthDate.month);
+  }
 
   @override
   Widget build(BuildContext context) {
+    final _MonthSummary summary = _buildSummary(_visibleMonth);
+    final List<DateTime?> dayCells = _buildDayCells(_visibleMonth);
+
     return Scaffold(
       appBar: AppBar(
-        title: Text('${monthName(widget.monthDate.month)} ${widget.monthDate.year}'),
+        title: Text(monthName(_visibleMonth.month).toLowerCase()),
         actions: [
           PopupMenuButton<String>(
             enabled: !_isSaving,
             onSelected: (String value) {
               if (value == 'download_pdf') {
-                _downloadPdfReport();
+                _downloadPdfReport(summary);
               }
             },
             itemBuilder: (BuildContext context) => const [
@@ -48,68 +68,234 @@ class _MonthAnalyticsScreenState extends State<MonthAnalyticsScreen> {
         ],
       ),
       bottomNavigationBar: BannerAdBar(
-        refreshToken: widget.monthDate.microsecondsSinceEpoch,
+        refreshToken: _visibleMonth.microsecondsSinceEpoch,
       ),
       body: Container(
-        color: kSheetColor,
+        color: Colors.white,
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.fromLTRB(6, 12, 6, 12),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: _MonthActionButton(
+                      label: 'PREV',
+                      icon: Icons.chevron_left,
+                      onTap: () => setState(() {
+                        _visibleMonth = DateTime(
+                          _visibleMonth.year,
+                          _visibleMonth.month - 1,
+                        );
+                      }),
+                    ),
+                  ),
+                  Expanded(
+                    flex: 2,
+                    child: Center(
+                      child: Text(
+                        '${monthName(_visibleMonth.month).toUpperCase()} ${_visibleMonth.year}',
+                        style: const TextStyle(
+                          color: Colors.black,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: _MonthActionButton(
+                      label: 'NEXT',
+                      icon: Icons.chevron_right,
+                      isTrailingIcon: true,
+                      onTap: () => setState(() {
+                        _visibleMonth = DateTime(
+                          _visibleMonth.year,
+                          _visibleMonth.month + 1,
+                        );
+                      }),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: _weekdays
+                    .map(
+                      (String day) => Expanded(
+                        child: Center(
+                          child: Text(
+                            day,
+                            style: const TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ),
+                    )
+                    .toList(),
+              ),
+              const SizedBox(height: 8),
+              AspectRatio(
+                aspectRatio: 1.05,
+                child: GridView.builder(
+                  padding: EdgeInsets.zero,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: dayCells.length,
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 7,
+                    mainAxisSpacing: 0,
+                    crossAxisSpacing: 0,
+                    childAspectRatio: 1,
+                  ),
+                  itemBuilder: (BuildContext context, int index) {
+                    final DateTime? day = dayCells[index];
+                    if (day == null) {
+                      return const _AnalyticsEmptyCell();
+                    }
+
+                    final AttendanceStatus? mark = widget.attendanceMarks[
+                        DateTime(day.year, day.month, day.day)];
+                    return _AnalyticsDayCell(
+                      day: day,
+                      mark: mark,
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 14),
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.all(14),
+                padding: const EdgeInsets.fromLTRB(12, 14, 12, 12),
                 decoration: BoxDecoration(
-                  color: kSheetColor,
-                  border: Border.all(color: const Color(0xFFDDD6A7)),
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFD2D2D2)),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x14000000),
+                      blurRadius: 6,
+                      offset: Offset(0, 2),
+                    ),
+                  ],
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Selected Month: ${monthName(widget.monthDate.month)} ${widget.monthDate.year}',
-                      style: const TextStyle(
-                        color: kPrimaryColor,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                      ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Text(
+                          'Attendance for this month',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          width: 26,
+                          height: 26,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF505050),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: const Icon(
+                            Icons.keyboard_arrow_down,
+                            color: Colors.white,
+                            size: 18,
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Total marked days: ${widget.totalMarked}',
-                      style: const TextStyle(
-                        color: kPrimaryColor,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                      ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _AnalyticsLegendItem(
+                            color: AttendanceStatus.present.color,
+                            label: 'Present : ${summary.presentCount}',
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _AnalyticsLegendItem(
+                            color: AttendanceStatus.absent.color,
+                            label: 'Absent : ${summary.absentCount}',
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _AnalyticsLegendItem(
+                            color: AttendanceStatus.halfDay.color,
+                            label: 'Half Days : ${summary.halfDayCount}',
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _AnalyticsLegendItem(
+                            color: AttendanceStatus.overtime.color,
+                            label: 'OT : ${summary.overtimeCount} days',
+                            textColor: Colors.black87,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Percentage : ${summary.attendancePercentage}%',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 20,
+                            vertical: 10,
+                          ),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(8),
+                            gradient: const LinearGradient(
+                              colors: [
+                                Color(0xFF5B5B5B),
+                                Color(0xFF252525),
+                              ],
+                            ),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.info_outline,
+                                color: Color(0xFF44D36F),
+                                size: 16,
+                              ),
+                              SizedBox(width: 6),
+                              Text(
+                                'More Info',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
               ),
-              const SizedBox(height: 12),
-              Container(
-                width: double.infinity,
-                height: 420,
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: kSheetColor,
-                  border: Border.all(color: const Color(0xFFDDD6A7)),
-                ),
-                child: _AnalyticsMonthCalendar(
-                  monthDate: widget.monthDate,
-                  attendanceMarks: widget.attendanceMarks,
-                ),
-              ),
-              const SizedBox(height: 12),
-              for (final AttendanceStatus status in AttendanceStatus.values) ...[
-                _AnalyticsRow(
-                  label: status.label,
-                  color: status.color,
-                  count: widget.counts[status] ?? 0,
-                ),
-                const SizedBox(height: 8),
-              ],
             ],
           ),
         ),
@@ -117,16 +303,16 @@ class _MonthAnalyticsScreenState extends State<MonthAnalyticsScreen> {
     );
   }
 
-  Future<void> _downloadPdfReport() async {
+  Future<void> _downloadPdfReport(_MonthSummary summary) async {
     setState(() {
       _isSaving = true;
     });
 
     try {
       final file = await PdfReportService().saveMonthReport(
-        monthDate: widget.monthDate,
-        counts: widget.counts,
-        totalMarked: widget.totalMarked,
+        monthDate: _visibleMonth,
+        counts: summary.counts,
+        totalMarked: summary.totalMarked,
       );
 
       if (!mounted) {
@@ -152,88 +338,41 @@ class _MonthAnalyticsScreenState extends State<MonthAnalyticsScreen> {
       }
     }
   }
-}
 
-class _AnalyticsMonthCalendar extends StatelessWidget {
-  const _AnalyticsMonthCalendar({
-    required this.monthDate,
-    required this.attendanceMarks,
-  });
+  _MonthSummary _buildSummary(DateTime month) {
+    final Map<AttendanceStatus, int> counts = <AttendanceStatus, int>{
+      for (final AttendanceStatus status in AttendanceStatus.values) status: 0,
+    };
 
-  final DateTime monthDate;
-  final Map<DateTime, AttendanceStatus> attendanceMarks;
+    for (final MapEntry<DateTime, AttendanceStatus> entry
+        in widget.attendanceMarks.entries) {
+      if (entry.key.year == month.year && entry.key.month == month.month) {
+        counts[entry.value] = (counts[entry.value] ?? 0) + 1;
+      }
+    }
 
-  static const List<String> _weekdays = <String>[
-    'S',
-    'M',
-    'T',
-    'W',
-    'T',
-    'F',
-    'S',
-  ];
+    final int presentCount = counts[AttendanceStatus.present] ?? 0;
+    final int absentCount = counts[AttendanceStatus.absent] ?? 0;
+    final int halfDayCount = counts[AttendanceStatus.halfDay] ?? 0;
+    final int overtimeCount = counts[AttendanceStatus.overtime] ?? 0;
+    final int shiftCount = counts[AttendanceStatus.shift] ?? 0;
+    final int holidayCount = counts[AttendanceStatus.holiday] ?? 0;
+    final int totalMarked =
+        presentCount + absentCount + halfDayCount + overtimeCount + shiftCount + holidayCount;
 
-  @override
-  Widget build(BuildContext context) {
-    final List<DateTime?> dayCells = _buildDayCells(monthDate);
+    final int attendanceBase = presentCount + absentCount + halfDayCount;
+    final double percentage = attendanceBase == 0
+        ? 0
+        : ((presentCount + (halfDayCount * 0.5)) / attendanceBase) * 100;
 
-    return Column(
-      children: [
-        Text(
-          monthName(monthDate.month),
-          style: const TextStyle(
-            fontSize: 16,
-            color: Color(0xFFC74D46),
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Row(
-          children: _weekdays
-              .map(
-                (String day) => Expanded(
-                  child: Center(
-                    child: Text(
-                      day,
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: Color(0xFF5A4637),
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ),
-              )
-              .toList(),
-        ),
-        const SizedBox(height: 6),
-        Expanded(
-          child: GridView.builder(
-            padding: EdgeInsets.zero,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: dayCells.length,
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 7,
-              mainAxisSpacing: 1.2,
-              crossAxisSpacing: 1.2,
-              childAspectRatio: 1,
-            ),
-            itemBuilder: (BuildContext context, int index) {
-              final DateTime? day = dayCells[index];
-              if (day == null) {
-                return const SizedBox.shrink();
-              }
-
-              final DateTime normalizedDay = DateTime(day.year, day.month, day.day);
-              return _AnalyticsDayCell(
-                day: day,
-                isSunday: day.weekday == DateTime.sunday,
-                mark: attendanceMarks[normalizedDay],
-              );
-            },
-          ),
-        ),
-      ],
+    return _MonthSummary(
+      counts: counts,
+      totalMarked: totalMarked,
+      presentCount: presentCount,
+      absentCount: absentCount,
+      halfDayCount: halfDayCount,
+      overtimeCount: overtimeCount,
+      attendancePercentage: percentage.toStringAsFixed(2),
     );
   }
 
@@ -259,32 +398,134 @@ class _AnalyticsMonthCalendar extends StatelessWidget {
   }
 }
 
+class _MonthSummary {
+  const _MonthSummary({
+    required this.counts,
+    required this.totalMarked,
+    required this.presentCount,
+    required this.absentCount,
+    required this.halfDayCount,
+    required this.overtimeCount,
+    required this.attendancePercentage,
+  });
+
+  final Map<AttendanceStatus, int> counts;
+  final int totalMarked;
+  final int presentCount;
+  final int absentCount;
+  final int halfDayCount;
+  final int overtimeCount;
+  final String attendancePercentage;
+}
+
+class _MonthActionButton extends StatelessWidget {
+  const _MonthActionButton({
+    required this.label,
+    required this.icon,
+    required this.onTap,
+    this.isTrailingIcon = false,
+  });
+
+  final String label;
+  final IconData icon;
+  final VoidCallback onTap;
+  final bool isTrailingIcon;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        height: 38,
+        margin: const EdgeInsets.symmetric(horizontal: 2),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(6),
+          gradient: const LinearGradient(
+            colors: [Color(0xFF727272), Color(0xFF232323)],
+          ),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x33000000),
+              blurRadius: 4,
+              offset: Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: isTrailingIcon
+              ? [
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  Icon(icon, color: const Color(0xFF1FDC67)),
+                ]
+              : [
+                  Icon(icon, color: const Color(0xFF1FDC67)),
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AnalyticsEmptyCell extends StatelessWidget {
+  const _AnalyticsEmptyCell();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.black, width: 0.5),
+      ),
+    );
+  }
+}
+
 class _AnalyticsDayCell extends StatelessWidget {
   const _AnalyticsDayCell({
     required this.day,
-    required this.isSunday,
     required this.mark,
   });
 
   final DateTime day;
-  final bool isSunday;
   final AttendanceStatus? mark;
 
   @override
   Widget build(BuildContext context) {
-    return CustomPaint(
-      painter: _AnalyticsDayPainter(
-        baseColor: isSunday ? kSundayColor : kSheetColor,
-        borderColor: const Color(0xFF808080),
-        markColor: mark?.color,
+    final Color backgroundColor = mark?.color ?? Colors.white;
+    final Color textColor = backgroundColor.computeLuminance() < 0.45
+        ? Colors.white
+        : Colors.black;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        border: Border.all(
+          color: mark == AttendanceStatus.shift
+              ? Colors.blue.shade700
+              : Colors.black,
+          width: mark == AttendanceStatus.shift ? 2 : 0.5,
+        ),
       ),
       child: Center(
         child: Text(
           '${day.day}',
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 10,
-            color: Color(0xFF4E4E4E),
-            fontWeight: FontWeight.w600,
+            color: textColor,
+            fontWeight: FontWeight.w500,
           ),
         ),
       ),
@@ -292,106 +533,37 @@ class _AnalyticsDayCell extends StatelessWidget {
   }
 }
 
-class _AnalyticsDayPainter extends CustomPainter {
-  _AnalyticsDayPainter({
-    required this.baseColor,
-    required this.borderColor,
-    required this.markColor,
-  });
-
-  final Color baseColor;
-  final Color borderColor;
-  final Color? markColor;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final Rect rect = Offset.zero & size;
-    canvas.drawRect(rect, Paint()..color = baseColor);
-
-    if (markColor != null) {
-      final Path filledHalf = Path()
-        ..moveTo(0, size.height)
-        ..lineTo(size.width, size.height)
-        ..lineTo(size.width, 0)
-        ..close();
-      canvas.drawPath(filledHalf, Paint()..color = markColor!);
-      canvas.drawLine(
-        Offset(size.width, 0),
-        Offset(0, size.height),
-        Paint()
-          ..color = borderColor
-          ..strokeWidth = 0.5
-          ..style = PaintingStyle.stroke,
-      );
-    }
-
-    canvas.drawRect(
-      rect.deflate(0.25),
-      Paint()
-        ..color = borderColor
-        ..strokeWidth = 0.5
-        ..style = PaintingStyle.stroke,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _AnalyticsDayPainter oldDelegate) {
-    return oldDelegate.baseColor != baseColor ||
-        oldDelegate.borderColor != borderColor ||
-        oldDelegate.markColor != markColor;
-  }
-}
-
-class _AnalyticsRow extends StatelessWidget {
-  const _AnalyticsRow({
-    required this.label,
+class _AnalyticsLegendItem extends StatelessWidget {
+  const _AnalyticsLegendItem({
     required this.color,
-    required this.count,
+    required this.label,
+    this.textColor = Colors.black,
   });
 
-  final String label;
   final Color color;
-  final int count;
+  final String label;
+  final Color textColor;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-      decoration: BoxDecoration(
-        color: kSheetColor,
-        border: Border.all(color: const Color(0xFFDDD6A7)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 12,
-            height: 12,
-            decoration: BoxDecoration(
-              color: color,
-              borderRadius: BorderRadius.circular(3),
+    return Row(
+      children: [
+        Container(
+          width: 18,
+          height: 18,
+          color: color,
+        ),
+        const SizedBox(width: 4),
+        Expanded(
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              color: textColor,
             ),
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              label,
-              style: const TextStyle(
-                color: kPrimaryColor,
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          Text(
-            '$count',
-            style: const TextStyle(
-              color: kPrimaryColor,
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
