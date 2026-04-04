@@ -1,7 +1,9 @@
 import 'dart:convert';
 
+import 'package:daily_attendance/select_months_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'attendance_models.dart';
 import 'banner_ad_bar.dart';
@@ -26,6 +28,26 @@ class _AttendanceHomeScreenState extends State<AttendanceHomeScreen> {
   bool _isLoaded = false;
   int _adRefreshToken = 0;
 
+  Future<void> _openPrivacyPolicy() async {
+    final Uri url = Uri.parse(
+      'https://www.termsfeed.com/live/a525088b-da0d-4df8-be00-fb6640222334',
+    );
+
+    if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+      throw 'Could not launch $url';
+    }
+  }
+
+  Future<void> _sendFeedback() async {
+    final Uri emailUri = Uri(
+      scheme: 'mailto',
+      path: 'epson5732@gmail.com',
+      query: 'subject=App Feedback',
+    );
+
+    await launchUrl(emailUri);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -35,14 +57,73 @@ class _AttendanceHomeScreenState extends State<AttendanceHomeScreen> {
     _loadSavedAttendance();
   }
 
+  Widget _buildDrawer() {
+    return Drawer(
+      child: Column(
+        children: [
+          DrawerHeader(
+            decoration: const BoxDecoration(color: kPrimaryColor),
+            child: Align(
+              alignment: Alignment.center,
+              child: Text(
+                'Daily Attendance',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 26,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+
+          // 📥 Import Reports
+          ListTile(
+            leading: const Icon(Icons.download),
+            title: const Text('Export Reports'),
+            onTap: () {
+              Navigator.pop(context); // 👈 drawer close (recommended)
+
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => SelectMonthsScreen(
+                    attendanceMarks: _attendanceMarks, // ✅ FIX HERE
+                  ),
+                ),
+              );
+            },
+          ),
+
+          // 🔒 Privacy Policy
+          ListTile(
+            leading: const Icon(Icons.privacy_tip),
+            title: const Text('Privacy Policy'),
+            onTap: () {
+              Navigator.pop(context);
+              _openPrivacyPolicy();
+            },
+          ),
+
+          // 📩 Send Feedback
+          ListTile(
+            leading: const Icon(Icons.feedback),
+            title: const Text('Send Feedback'),
+            onTap: () {
+              Navigator.pop(context);
+              _sendFeedback();
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final CalendarPalette palette = CalendarPalette();
-    final AttendanceStatus? selectedDateStatus = _selectedDate == null
-        ? null
-        : _attendanceMarks[_normalizeDate(_selectedDate!)];
 
     return Scaffold(
+      drawer: _buildDrawer(),
       appBar: AppBar(
         centerTitle: false,
         title: const Text(
@@ -115,6 +196,9 @@ class _AttendanceHomeScreenState extends State<AttendanceHomeScreen> {
                                     _selectedDate = day;
                                   });
                                   await _persistAttendance();
+                                  _openMonthAnalyticsScreen(
+                                    DateTime(day.year, day.month),
+                                  );
                                 },
                               );
                             },
@@ -134,51 +218,16 @@ class _AttendanceHomeScreenState extends State<AttendanceHomeScreen> {
                       ),
                     ),
                   ),
-                  Container(
-                    width: double.infinity,
-                    color: kSheetColor,
-                    padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
-                    child: Column(
-                      children: [
-                        if (_selectedDate != null)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 6),
-                            child: Text(
-                              'Selected: ${_formatDate(_selectedDate!)}',
-                              style: const TextStyle(
-                                color: kPrimaryColor,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        SizedBox(
-                          width: double.infinity,
-                          child: FilledButton(
-                            onPressed: _selectedDate == null || selectedDateStatus != null
-                                ? null
-                                : () => _openMarkAttendance(),
-                            style: FilledButton.styleFrom(
-                              backgroundColor: kPrimaryColor,
-                              disabledBackgroundColor: Colors.black26,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                            ),
-                            child: Text(
-                              selectedDateStatus == null
-                                  ? 'Mark Attendance'
-                                  : 'Attendance Marked',
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
                 ],
               ),
             ),
-            _StatusStrip(palette: palette),
+            ColoredBox(
+              color: kSheetColor,
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 40.0),
+                child: _StatusStrip(palette: palette),
+              ),
+            ),
           ],
         ),
       ),
@@ -191,7 +240,8 @@ class _AttendanceHomeScreenState extends State<AttendanceHomeScreen> {
     };
 
     int totalMarked = 0;
-    for (final MapEntry<DateTime, AttendanceStatus> entry in _attendanceMarks.entries) {
+    for (final MapEntry<DateTime, AttendanceStatus> entry
+        in _attendanceMarks.entries) {
       final DateTime date = entry.key;
       if (date.year == monthDate.year && date.month == monthDate.month) {
         counts[entry.value] = (counts[entry.value] ?? 0) + 1;
@@ -215,89 +265,6 @@ class _AttendanceHomeScreenState extends State<AttendanceHomeScreen> {
     setState(() {
       _adRefreshToken++;
     });
-  }
-
-  Future<void> _openMarkAttendance() async {
-    final DateTime selectedDate = _selectedDate!;
-    AttendanceStatus? selectedStatus = _attendanceMarks[_normalizeDate(selectedDate)];
-
-    final AttendanceStatus? submittedStatus = await showDialog<AttendanceStatus>(
-      context: context,
-      builder: (BuildContext context) {
-        return StatefulBuilder(
-          builder: (BuildContext context, StateSetter setDialogState) {
-            return AlertDialog(
-              title: Text('Mark ${_formatDate(selectedDate)}'),
-              content: SizedBox(
-                width: 320,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: AttendanceStatus.values
-                      .map(
-                        (AttendanceStatus status) => InkWell(
-                          onTap: () {
-                            setDialogState(() {
-                              selectedStatus = status;
-                            });
-                          },
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 4),
-                            child: Row(
-                              children: [
-                                Icon(
-                                  selectedStatus == status
-                                      ? Icons.radio_button_checked
-                                      : Icons.radio_button_off,
-                                  color: status.color,
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(child: Text(status.label)),
-                              ],
-                            ),
-                          ),
-                        ),
-                      )
-                      .toList(),
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Cancel'),
-                ),
-                FilledButton(
-                  onPressed: selectedStatus == null
-                      ? null
-                      : () => Navigator.of(context).pop(selectedStatus),
-                  child: const Text('Submit'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-
-    if (!mounted || submittedStatus == null) {
-      return;
-    }
-
-    setState(() {
-      _attendanceMarks[_normalizeDate(selectedDate)] = submittedStatus;
-    });
-    await _persistAttendance();
-
-    if (!mounted) {
-      return;
-    }
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          '${submittedStatus.label} marked for ${_formatDate(selectedDate)}',
-        ),
-      ),
-    );
   }
 
   DateTime _normalizeDate(DateTime date) {
@@ -352,7 +319,9 @@ class _AttendanceHomeScreenState extends State<AttendanceHomeScreen> {
 
     setState(() {
       _year = savedYear;
-      _selectedDate = restoredDate == null ? null : _normalizeDate(restoredDate);
+      _selectedDate = restoredDate == null
+          ? null
+          : _normalizeDate(restoredDate);
       _attendanceMarks
         ..clear()
         ..addAll(parsedMarks);
@@ -364,20 +333,19 @@ class _AttendanceHomeScreenState extends State<AttendanceHomeScreen> {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     final Map<String, String> encodedMarks = <String, String>{};
 
-    for (final MapEntry<DateTime, AttendanceStatus> entry in _attendanceMarks.entries) {
+    for (final MapEntry<DateTime, AttendanceStatus> entry
+        in _attendanceMarks.entries) {
       encodedMarks[entry.key.toIso8601String()] = entry.value.name;
     }
 
     await prefs.setInt(_kStoredYearKey, _year);
     await prefs.setString(
       _kStoredDateKey,
-      _selectedDate == null ? '' : _normalizeDate(_selectedDate!).toIso8601String(),
+      _selectedDate == null
+          ? ''
+          : _normalizeDate(_selectedDate!).toIso8601String(),
     );
     await prefs.setString(_kStoredMarksKey, jsonEncode(encodedMarks));
-  }
-
-  String _formatDate(DateTime date) {
-    return '${date.day}/${date.month}/${date.year}';
   }
 }
 
@@ -410,12 +378,12 @@ class _MiniMonth extends StatelessWidget {
   Widget build(BuildContext context) {
     final List<DateTime?> dayCells = _buildDayCells(monthDate);
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        InkWell(
-          onTap: () => onMonthTap(monthDate),
-          child: Text(
+    return InkWell(
+      onTap: () => onMonthTap(monthDate),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
             monthName(monthDate.month),
             style: const TextStyle(
               fontSize: 11,
@@ -423,57 +391,61 @@ class _MiniMonth extends StatelessWidget {
               fontWeight: FontWeight.w500,
             ),
           ),
-        ),
-        const SizedBox(height: 4),
-        Row(
-          children: _weekdays
-              .map(
-                (String day) => Expanded(
-                  child: Center(
-                    child: Text(
-                      day,
-                      style: const TextStyle(
-                        fontSize: 9,
-                        color: Color(0xFF5A4637),
-                        fontWeight: FontWeight.w500,
+          const SizedBox(height: 4),
+          Row(
+            children: _weekdays
+                .map(
+                  (String day) => Expanded(
+                    child: Center(
+                      child: Text(
+                        day,
+                        style: const TextStyle(
+                          fontSize: 9,
+                          color: Color(0xFF5A4637),
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                     ),
                   ),
-                ),
-              )
-              .toList(),
-        ),
-        const SizedBox(height: 4),
-        Expanded(
-          child: GridView.builder(
-            padding: EdgeInsets.zero,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: dayCells.length,
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 7,
-              mainAxisSpacing: 0.7,
-              crossAxisSpacing: 0.7,
-              childAspectRatio: 1,
-            ),
-            itemBuilder: (BuildContext context, int index) {
-              final DateTime? day = dayCells[index];
-              if (day == null) {
-                return const SizedBox.shrink();
-              }
-
-              final DateTime normalizedDay = DateTime(day.year, day.month, day.day);
-
-              return _MiniDayCell(
-                day: day,
-                isSunday: day.weekday == DateTime.sunday,
-                isSelected: _isSameDay(selectedDate, day),
-                mark: attendanceMarks[normalizedDay],
-                onTap: () => onDayTap(normalizedDay),
-              );
-            },
+                )
+                .toList(),
           ),
-        ),
-      ],
+          const SizedBox(height: 4),
+          Expanded(
+            child: GridView.builder(
+              padding: EdgeInsets.zero,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: dayCells.length,
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 7,
+                mainAxisSpacing: 0.7,
+                crossAxisSpacing: 0.7,
+                childAspectRatio: 1,
+              ),
+              itemBuilder: (BuildContext context, int index) {
+                final DateTime? day = dayCells[index];
+                if (day == null) {
+                  return const SizedBox.shrink();
+                }
+
+                final DateTime normalizedDay = DateTime(
+                  day.year,
+                  day.month,
+                  day.day,
+                );
+
+                return _MiniDayCell(
+                  day: day,
+                  isSunday: day.weekday == DateTime.sunday,
+                  isSelected: _isSameDay(selectedDate, day),
+                  mark: attendanceMarks[normalizedDay],
+                  onTap: () => onDayTap(normalizedDay),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -537,10 +509,12 @@ class _MiniDayCell extends StatelessWidget {
           child: Center(
             child: Text(
               '${day.day}',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 8,
-                color: Color(0xFF4E4E4E),
                 fontWeight: FontWeight.w500,
+                color: (mark?.color.computeLuminance() ?? 1) < 0.5
+                    ? Colors.white
+                    : const Color(0xFF4E4E4E),
               ),
             ),
           ),
@@ -570,28 +544,13 @@ class _AttendanceDayPainter extends CustomPainter {
     canvas.drawRect(rect, basePaint);
 
     if (markColor != null) {
-      final Path filledHalf = Path()
-        ..moveTo(0, size.height)
-        ..lineTo(size.width, size.height)
-        ..lineTo(size.width, 0)
-        ..close();
       final Paint markPaint = Paint()..color = markColor!;
-      canvas.drawPath(filledHalf, markPaint);
-
-      final Paint diagonalPaint = Paint()
-        ..color = borderColor
-        ..strokeWidth = 0.5
-        ..style = PaintingStyle.stroke;
-      canvas.drawLine(
-        Offset(size.width, 0),
-        Offset(0, size.height),
-        diagonalPaint,
-      );
+      canvas.drawRect(rect, markPaint);
     }
 
     final Paint borderPaint = Paint()
-      ..color = highlightColor ?? borderColor
-      ..strokeWidth = highlightColor == null ? 0.5 : 1.2
+      ..color = borderColor
+      ..strokeWidth = 0.5
       ..style = PaintingStyle.stroke;
     canvas.drawRect(rect.deflate(borderPaint.strokeWidth / 2), borderPaint);
   }
