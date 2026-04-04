@@ -25,6 +25,9 @@ class MonthAnalyticsScreen extends StatefulWidget {
 class _MonthAnalyticsScreenState extends State<MonthAnalyticsScreen> {
   late DateTime _visibleMonth;
   bool _isSaving = false;
+  bool _isExpanded = false;
+
+  final Map<DateTime, ShiftType?> _shiftSubtypes = {};
 
   static const List<String> _weekdays = <String>[
     'SUN',
@@ -35,11 +38,272 @@ class _MonthAnalyticsScreenState extends State<MonthAnalyticsScreen> {
     'FRI',
     'SAT',
   ];
+  String _capitalize(String s) {
+    if (s.isEmpty) return s;
+    return s[0].toUpperCase() + s.substring(1).toLowerCase();
+  }
 
   @override
   void initState() {
     super.initState();
     _visibleMonth = DateTime(widget.monthDate.year, widget.monthDate.month);
+  }
+
+  Future<void> _openMarkAttendance(DateTime selectedDate) async {
+    AttendanceStatus? selectedStatus =
+        widget.attendanceMarks[DateTime(
+          selectedDate.year,
+          selectedDate.month,
+          selectedDate.day,
+        )];
+
+    // Extra variable to track shift subtype if needed (optional)
+    // If shift attendance needs subtype, you can add an enum or string for it.
+
+    final AttendanceStatus?
+    submittedStatus = await showDialog<AttendanceStatus>(
+      context: context,
+      builder: (context) {
+        AttendanceStatus? tempSelectedStatus = selectedStatus;
+        bool shiftExpanded = false;
+
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            Widget buildStatusOption(AttendanceStatus status, Widget icon) {
+              return InkWell(
+                onTap: () {
+                  setDialogState(() {
+                    tempSelectedStatus = status;
+                    shiftExpanded =
+                        false; // collapse shift submenu on selection
+                  });
+                },
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: Row(
+                    children: [
+                      icon,
+                      const SizedBox(width: 10),
+                      Text(status.label),
+                    ],
+                  ),
+                ),
+              );
+            }
+
+            Widget buildShiftSubmenu() {
+              return Column(
+                children: [
+                  InkWell(
+                    onTap: () {
+                      setDialogState(() {
+                        tempSelectedStatus = AttendanceStatus.shift;
+                        // You can store shift subtype info here if needed
+                        shiftExpanded = false;
+                      });
+                    },
+                    child: const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 6),
+                      child: Row(
+                        children: [
+                          SizedBox(width: 24), // indent to align with icons
+                          Text('General'),
+                        ],
+                      ),
+                    ),
+                  ),
+                  InkWell(
+                    onTap: () {
+                      setDialogState(() {
+                        // Shift subtype: Morning
+                        tempSelectedStatus =
+                            AttendanceStatus.shift; // same enum
+                        shiftExpanded = false;
+                      });
+                    },
+                    child: const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 6),
+                      child: Row(
+                        children: [SizedBox(width: 24), Text('Morning')],
+                      ),
+                    ),
+                  ),
+                  InkWell(
+                    onTap: () {
+                      setDialogState(() {
+                        // Shift subtype: Afternoon
+                        tempSelectedStatus = AttendanceStatus.shift;
+                        shiftExpanded = false;
+                      });
+                    },
+                    child: const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 6),
+                      child: Row(
+                        children: [SizedBox(width: 24), Text('Afternoon')],
+                      ),
+                    ),
+                  ),
+                  InkWell(
+                    onTap: () {
+                      setDialogState(() {
+                        // Shift subtype: Night
+                        tempSelectedStatus = AttendanceStatus.shift;
+                        shiftExpanded = false;
+                      });
+                    },
+                    child: const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 6),
+                      child: Row(
+                        children: [SizedBox(width: 24), Text('Night')],
+                      ),
+                    ),
+                  ),
+                  InkWell(
+                    onTap: () {
+                      setDialogState(() {
+                        // Clear shift (means clear attendance)
+                        tempSelectedStatus = null;
+                        shiftExpanded = false;
+                      });
+                    },
+                    child: const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 6),
+                      child: Row(
+                        children: [SizedBox(width: 24), Text('Clear Shift')],
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            }
+
+            return AlertDialog(
+              title: Text(
+                'Mark ${selectedDate.day}/${selectedDate.month}/${selectedDate.year}',
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    buildStatusOption(
+                      AttendanceStatus.present,
+                      Icon(Icons.check, color: AttendanceStatus.present.color),
+                    ),
+                    buildStatusOption(
+                      AttendanceStatus.absent,
+                      Icon(Icons.close, color: AttendanceStatus.absent.color),
+                    ),
+                    buildStatusOption(
+                      AttendanceStatus.halfDay,
+                      Icon(
+                        Icons.calendar_today_outlined,
+                        color: AttendanceStatus.halfDay.color,
+                      ),
+                    ),
+                    buildStatusOption(
+                      AttendanceStatus.overtime,
+                      Icon(
+                        Icons.timer_3_outlined,
+                        color: AttendanceStatus.overtime.color,
+                      ),
+                    ),
+                    InkWell(
+                      onTap: () {
+                        setDialogState(() {
+                          shiftExpanded = !shiftExpanded;
+                        });
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        child: Row(
+                          children: [
+                            Icon(
+                              shiftExpanded
+                                  ? Icons.keyboard_arrow_down
+                                  : Icons.keyboard_arrow_right,
+                              color: Colors.black54,
+                            ),
+                            const SizedBox(width: 10),
+                            const Text('Shift'),
+                          ],
+                        ),
+                      ),
+                    ),
+                    if (shiftExpanded) buildShiftSubmenu(),
+                    buildStatusOption(
+                      AttendanceStatus.holiday,
+                      const Icon(
+                        Icons.more_horiz,
+                        color: Colors.grey,
+                      ), // changed to "Holiday" icon if you want something else change here
+                    ),
+                    InkWell(
+                      onTap: () {
+                        setDialogState(() {
+                          tempSelectedStatus = null; // Clear attendance
+                        });
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.check_box_outline_blank,
+                              color: Colors.black,
+                            ),
+                            const SizedBox(width: 10),
+                            const Text('Clear'),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(context, tempSelectedStatus),
+                  child: const Text('Submit'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (submittedStatus == null) {
+      // Clear attendance if clear selected or no option selected
+      setState(() {
+        widget.attendanceMarks.remove(
+          DateTime(selectedDate.year, selectedDate.month, selectedDate.day),
+        );
+      });
+      return;
+    }
+
+    setState(() {
+      widget.attendanceMarks[DateTime(
+            selectedDate.year,
+            selectedDate.month,
+            selectedDate.day,
+          )] =
+          submittedStatus;
+    });
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '${submittedStatus.label} marked for ${selectedDate.day}/${selectedDate.month}/${selectedDate.year}',
+        ),
+      ),
+    );
   }
 
   @override
@@ -49,7 +313,7 @@ class _MonthAnalyticsScreenState extends State<MonthAnalyticsScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(monthName(_visibleMonth.month).toLowerCase()),
+        title: Text(_capitalize(monthName(_visibleMonth.month))),
         actions: [
           PopupMenuButton<String>(
             enabled: !_isSaving,
@@ -127,7 +391,7 @@ class _MonthAnalyticsScreenState extends State<MonthAnalyticsScreen> {
                           child: Text(
                             day,
                             style: const TextStyle(
-                              fontSize: 10,
+                              fontSize: 14,
                               fontWeight: FontWeight.w500,
                             ),
                           ),
@@ -155,16 +419,23 @@ class _MonthAnalyticsScreenState extends State<MonthAnalyticsScreen> {
                       return const _AnalyticsEmptyCell();
                     }
 
-                    final AttendanceStatus? mark = widget.attendanceMarks[
-                        DateTime(day.year, day.month, day.day)];
+                    final AttendanceStatus? mark =
+                        widget.attendanceMarks[DateTime(
+                          day.year,
+                          day.month,
+                          day.day,
+                        )];
                     return _AnalyticsDayCell(
                       day: day,
                       mark: mark,
+                      shiftType: _shiftSubtypes[day],
+                      onTap: (selectedDay) {
+                        _openMarkAttendance(selectedDay);
+                      },
                     );
                   },
                 ),
               ),
-              const SizedBox(height: 14),
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.fromLTRB(12, 14, 12, 12),
@@ -194,17 +465,26 @@ class _MonthAnalyticsScreenState extends State<MonthAnalyticsScreen> {
                           ),
                         ),
                         const SizedBox(width: 8),
-                        Container(
-                          width: 26,
-                          height: 26,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF505050),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: const Icon(
-                            Icons.keyboard_arrow_down,
-                            color: Colors.white,
-                            size: 18,
+                        GestureDetector(
+                          onTap: () {
+                            setState(() {
+                              _isExpanded = !_isExpanded;
+                            });
+                          },
+                          child: Container(
+                            width: 26,
+                            height: 26,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF505050),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Icon(
+                              _isExpanded
+                                  ? Icons.keyboard_arrow_up
+                                  : Icons.keyboard_arrow_down,
+                              color: Colors.white,
+                              size: 18,
+                            ),
                           ),
                         ),
                       ],
@@ -246,6 +526,28 @@ class _MonthAnalyticsScreenState extends State<MonthAnalyticsScreen> {
                         ),
                       ],
                     ),
+                    const SizedBox(height: 12),
+                    if (_isExpanded) ...[
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _AnalyticsLegendItem(
+                              color: AttendanceStatus.shift.color,
+                              label:
+                                  'Shift : ${summary.counts[AttendanceStatus.shift] ?? 0}',
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _AnalyticsLegendItem(
+                              color: AttendanceStatus.holiday.color,
+                              label:
+                                  'Holiday : ${summary.counts[AttendanceStatus.holiday] ?? 0}',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                     const SizedBox(height: 16),
                     Row(
                       children: [
@@ -258,39 +560,36 @@ class _MonthAnalyticsScreenState extends State<MonthAnalyticsScreen> {
                             ),
                           ),
                         ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 20,
-                            vertical: 10,
-                          ),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(8),
-                            gradient: const LinearGradient(
-                              colors: [
-                                Color(0xFF5B5B5B),
-                                Color(0xFF252525),
-                              ],
-                            ),
-                          ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.info_outline,
-                                color: Color(0xFF44D36F),
-                                size: 16,
-                              ),
-                              SizedBox(width: 6),
-                              Text(
-                                'More Info',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+                        // Container(
+                        //   padding: const EdgeInsets.symmetric(
+                        //     horizontal: 20,
+                        //     vertical: 10,
+                        //   ),
+                        //   decoration: BoxDecoration(
+                        //     borderRadius: BorderRadius.circular(8),
+                        //     gradient: const LinearGradient(
+                        //       colors: [Color(0xFF5B5B5B), Color(0xFF252525)],
+                        //     ),
+                        //   ),
+                        //   child: const Row(
+                        //     mainAxisSize: MainAxisSize.min,
+                        //     children: [
+                        //       Icon(
+                        //         Icons.info_outline,
+                        //         color: Color(0xFF44D36F),
+                        //         size: 16,
+                        //       ),
+                        //       SizedBox(width: 6),
+                        //       Text(
+                        //         'More Info',
+                        //         style: TextStyle(
+                        //           color: Colors.white,
+                        //           fontWeight: FontWeight.w700,
+                        //         ),
+                        //       ),
+                        //     ],
+                        //   ),
+                        // ),
                       ],
                     ),
                   ],
@@ -304,40 +603,37 @@ class _MonthAnalyticsScreenState extends State<MonthAnalyticsScreen> {
   }
 
   Future<void> _downloadPdfReport(_MonthSummary summary) async {
-    setState(() {
-      _isSaving = true;
-    });
+  setState(() {
+    _isSaving = true;
+  });
 
-    try {
-      final file = await PdfReportService().saveMonthReport(
-        monthDate: _visibleMonth,
-        counts: summary.counts,
-        totalMarked: summary.totalMarked,
-      );
+  try {
+    final file = await PdfReportService().generateReportFromMarks(
+      months: [_visibleMonth],
+      attendanceMarks: widget.attendanceMarks,
+    );
 
-      if (!mounted) {
-        return;
-      }
+    await PdfReportService().saveToDownloads(file);
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('PDF saved to ${file.path}')),
-      );
-    } catch (error) {
-      if (!mounted) {
-        return;
-      }
+    if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to save PDF: $error')),
-      );
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isSaving = false;
-        });
-      }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('PDF saved to Downloads')),
+    );
+  } catch (error) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Failed: $error')),
+    );
+  } finally {
+    if (mounted) {
+      setState(() {
+        _isSaving = false;
+      });
     }
   }
+}
 
   _MonthSummary _buildSummary(DateTime month) {
     final Map<AttendanceStatus, int> counts = <AttendanceStatus, int>{
@@ -358,7 +654,12 @@ class _MonthAnalyticsScreenState extends State<MonthAnalyticsScreen> {
     final int shiftCount = counts[AttendanceStatus.shift] ?? 0;
     final int holidayCount = counts[AttendanceStatus.holiday] ?? 0;
     final int totalMarked =
-        presentCount + absentCount + halfDayCount + overtimeCount + shiftCount + holidayCount;
+        presentCount +
+        absentCount +
+        halfDayCount +
+        overtimeCount +
+        shiftCount +
+        holidayCount;
 
     final int attendanceBase = presentCount + absentCount + halfDayCount;
     final double percentage = attendanceBase == 0
@@ -497,10 +798,14 @@ class _AnalyticsDayCell extends StatelessWidget {
   const _AnalyticsDayCell({
     required this.day,
     required this.mark,
+    required this.onTap,
+    this.shiftType,
   });
 
   final DateTime day;
   final AttendanceStatus? mark;
+  final Function(DateTime) onTap;
+  final ShiftType? shiftType;
 
   @override
   Widget build(BuildContext context) {
@@ -509,24 +814,60 @@ class _AnalyticsDayCell extends StatelessWidget {
         ? Colors.white
         : Colors.black;
 
-    return Container(
-      decoration: BoxDecoration(
-        color: backgroundColor,
-        border: Border.all(
-          color: mark == AttendanceStatus.shift
-              ? Colors.blue.shade700
-              : Colors.black,
-          width: mark == AttendanceStatus.shift ? 2 : 0.5,
-        ),
-      ),
-      child: Center(
-        child: Text(
-          '${day.day}',
-          style: TextStyle(
-            fontSize: 10,
-            color: textColor,
-            fontWeight: FontWeight.w500,
+    String? shiftText;
+    if (shiftType != null) {
+      switch (shiftType) {
+        case ShiftType.morning:
+          shiftText = 'M';
+          break;
+        case ShiftType.afternoon:
+          shiftText = 'A';
+          break;
+        case ShiftType.night:
+          shiftText = 'N';
+          break;
+        case ShiftType.general:
+          shiftText = 'G';
+          break;
+          default:
+            shiftText = null;
+      }
+    }
+
+    return InkWell(
+      onTap: () => onTap(day),
+      child: Container(
+        decoration: BoxDecoration(
+          color: backgroundColor,
+          border: Border.all(
+            color: mark == AttendanceStatus.shift
+                ? Colors.blue.shade700
+                : Colors.black,
+            width: mark == AttendanceStatus.shift ? 2 : 0.5,
           ),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              '${day.day}',
+              style: TextStyle(
+                fontSize: 12,
+                color: textColor,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 4),
+            if (shiftText != null)
+              Text(
+                shiftText,
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+              ),
+          ],
         ),
       ),
     );
@@ -548,22 +889,14 @@ class _AnalyticsLegendItem extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Container(
-          width: 18,
-          height: 18,
-          color: color,
-        ),
+        Container(width: 18, height: 18, color: color),
         const SizedBox(width: 4),
         Expanded(
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 11,
-              color: textColor,
-            ),
-          ),
+          child: Text(label, style: TextStyle(fontSize: 11, color: textColor)),
         ),
       ],
     );
   }
 }
+
+enum ShiftType { morning, afternoon, night, general }
