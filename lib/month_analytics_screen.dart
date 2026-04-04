@@ -61,7 +61,7 @@ class _MonthAnalyticsScreenState extends State<MonthAnalyticsScreen> {
     // Extra variable to track shift subtype if needed (optional)
     // If shift attendance needs subtype, you can add an enum or string for it.
     double? overtimeHours;
-    // ShiftType? selectedShiftType;
+    ShiftType? selectedShiftType;
     final AttendanceStatus?
     submittedStatus = await showDialog<AttendanceStatus>(
       context: context,
@@ -100,6 +100,7 @@ class _MonthAnalyticsScreenState extends State<MonthAnalyticsScreen> {
                     onTap: () {
                       setDialogState(() {
                         tempSelectedStatus = AttendanceStatus.shift;
+                        selectedShiftType = ShiftType.general;
                         // You can store shift subtype info here if needed
                         shiftExpanded = false;
                       });
@@ -120,6 +121,7 @@ class _MonthAnalyticsScreenState extends State<MonthAnalyticsScreen> {
                         // Shift subtype: Morning
                         tempSelectedStatus =
                             AttendanceStatus.shift; // same enum
+                        selectedShiftType = ShiftType.morning; // track subtype
                         shiftExpanded = false;
                       });
                     },
@@ -135,6 +137,8 @@ class _MonthAnalyticsScreenState extends State<MonthAnalyticsScreen> {
                       setDialogState(() {
                         // Shift subtype: Afternoon
                         tempSelectedStatus = AttendanceStatus.shift;
+                        selectedShiftType =
+                            ShiftType.afternoon; // track subtype
                         shiftExpanded = false;
                       });
                     },
@@ -150,6 +154,7 @@ class _MonthAnalyticsScreenState extends State<MonthAnalyticsScreen> {
                       setDialogState(() {
                         // Shift subtype: Night
                         tempSelectedStatus = AttendanceStatus.shift;
+                        selectedShiftType = ShiftType.night; // track subtype
                         shiftExpanded = false;
                       });
                     },
@@ -322,8 +327,14 @@ class _MonthAnalyticsScreenState extends State<MonthAnalyticsScreen> {
     setState(() {
       widget.attendanceMarks[key] = submittedStatus;
 
+      // ✅ OVERTIME SAVE
       if (submittedStatus == AttendanceStatus.overtime) {
-        _overtimeHours[key] = overtimeHours; // ✅ user input save
+        _overtimeHours[key] = overtimeHours;
+      }
+
+      // ✅ SHIFT SAVE (IMPORTANT FIX)
+      if (submittedStatus == AttendanceStatus.shift) {
+        _shiftSubtypes[key] = selectedShiftType;
       }
     });
 
@@ -894,14 +905,17 @@ class _AnalyticsDayCell extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             if (mark == AttendanceStatus.overtime && overtimeHours != null)
-              Text('OT: ${overtimeHours!.toStringAsFixed(1)}', style: TextStyle(fontSize: 10)),
+              Text(
+                'OT: ${overtimeHours!.toStringAsFixed(1)}',
+                style: TextStyle(fontSize: 10),
+              ),
             if (shiftText != null)
               Text(
                 shiftText,
                 style: TextStyle(
                   fontSize: 10,
                   fontWeight: FontWeight.bold,
-                  color: Colors.black87,
+                  color: textColor,
                 ),
               ),
           ],
