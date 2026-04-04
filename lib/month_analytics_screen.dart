@@ -28,6 +28,7 @@ class _MonthAnalyticsScreenState extends State<MonthAnalyticsScreen> {
   bool _isExpanded = false;
 
   final Map<DateTime, ShiftType?> _shiftSubtypes = {};
+  final Map<DateTime, double?> _overtimeHours = {};
 
   static const List<String> _weekdays = <String>[
     'SUN',
@@ -59,7 +60,8 @@ class _MonthAnalyticsScreenState extends State<MonthAnalyticsScreen> {
 
     // Extra variable to track shift subtype if needed (optional)
     // If shift attendance needs subtype, you can add an enum or string for it.
-
+    double? overtimeHours;
+    // ShiftType? selectedShiftType;
     final AttendanceStatus?
     submittedStatus = await showDialog<AttendanceStatus>(
       context: context,
@@ -200,11 +202,42 @@ class _MonthAnalyticsScreenState extends State<MonthAnalyticsScreen> {
                         color: AttendanceStatus.halfDay.color,
                       ),
                     ),
-                    buildStatusOption(
-                      AttendanceStatus.overtime,
-                      Icon(
-                        Icons.timer_3_outlined,
-                        color: AttendanceStatus.overtime.color,
+                    InkWell(
+                      onTap: () {
+                        setDialogState(() {
+                          tempSelectedStatus = AttendanceStatus.overtime;
+                        });
+                      },
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.timer,
+                                color: AttendanceStatus.overtime.color,
+                              ),
+                              const SizedBox(width: 10),
+                              const Text('Overtime'),
+                            ],
+                          ),
+
+                          if (tempSelectedStatus == AttendanceStatus.overtime)
+                            Padding(
+                              padding: const EdgeInsets.only(left: 34, top: 8),
+                              child: TextField(
+                                keyboardType: TextInputType.number,
+                                decoration: const InputDecoration(
+                                  hintText: "Enter hours (e.g. 2.5)",
+                                  border: OutlineInputBorder(),
+                                  isDense: true,
+                                ),
+                                onChanged: (val) {
+                                  overtimeHours = double.tryParse(val);
+                                },
+                              ),
+                            ),
+                        ],
                       ),
                     ),
                     InkWell(
@@ -277,22 +310,21 @@ class _MonthAnalyticsScreenState extends State<MonthAnalyticsScreen> {
     );
 
     if (submittedStatus == null) {
-      // Clear attendance if clear selected or no option selected
-      setState(() {
-        widget.attendanceMarks.remove(
-          DateTime(selectedDate.year, selectedDate.month, selectedDate.day),
-        );
-      });
       return;
     }
 
+    final key = DateTime(
+      selectedDate.year,
+      selectedDate.month,
+      selectedDate.day,
+    );
+
     setState(() {
-      widget.attendanceMarks[DateTime(
-            selectedDate.year,
-            selectedDate.month,
-            selectedDate.day,
-          )] =
-          submittedStatus;
+      widget.attendanceMarks[key] = submittedStatus;
+
+      if (submittedStatus == AttendanceStatus.overtime) {
+        _overtimeHours[key] = overtimeHours; // ✅ user input save
+      }
     });
 
     if (!mounted) return;
@@ -429,6 +461,7 @@ class _MonthAnalyticsScreenState extends State<MonthAnalyticsScreen> {
                       day: day,
                       mark: mark,
                       shiftType: _shiftSubtypes[day],
+                      overtimeHours: _overtimeHours[day],
                       onTap: (selectedDay) {
                         _openMarkAttendance(selectedDay);
                       },
@@ -603,37 +636,37 @@ class _MonthAnalyticsScreenState extends State<MonthAnalyticsScreen> {
   }
 
   Future<void> _downloadPdfReport(_MonthSummary summary) async {
-  setState(() {
-    _isSaving = true;
-  });
+    setState(() {
+      _isSaving = true;
+    });
 
-  try {
-    final file = await PdfReportService().generateReportFromMarks(
-      months: [_visibleMonth],
-      attendanceMarks: widget.attendanceMarks,
-    );
+    try {
+      final file = await PdfReportService().generateReportFromMarks(
+        months: [_visibleMonth],
+        attendanceMarks: widget.attendanceMarks,
+      );
 
-    await PdfReportService().saveToDownloads(file);
+      await PdfReportService().saveToDownloads(file);
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('PDF saved to Downloads')),
-    );
-  } catch (error) {
-    if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('PDF saved to Downloads')));
+    } catch (error) {
+      if (!mounted) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Failed: $error')),
-    );
-  } finally {
-    if (mounted) {
-      setState(() {
-        _isSaving = false;
-      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed: $error')));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+        });
+      }
     }
   }
-}
 
   _MonthSummary _buildSummary(DateTime month) {
     final Map<AttendanceStatus, int> counts = <AttendanceStatus, int>{
@@ -800,12 +833,14 @@ class _AnalyticsDayCell extends StatelessWidget {
     required this.mark,
     required this.onTap,
     this.shiftType,
+    this.overtimeHours,
   });
 
   final DateTime day;
   final AttendanceStatus? mark;
   final Function(DateTime) onTap;
   final ShiftType? shiftType;
+  final double? overtimeHours;
 
   @override
   Widget build(BuildContext context) {
@@ -829,8 +864,8 @@ class _AnalyticsDayCell extends StatelessWidget {
         case ShiftType.general:
           shiftText = 'G';
           break;
-          default:
-            shiftText = null;
+        default:
+          shiftText = null;
       }
     }
 
@@ -858,6 +893,8 @@ class _AnalyticsDayCell extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 4),
+            if (mark == AttendanceStatus.overtime && overtimeHours != null)
+              Text('OT: ${overtimeHours!.toStringAsFixed(1)}', style: TextStyle(fontSize: 10)),
             if (shiftText != null)
               Text(
                 shiftText,
