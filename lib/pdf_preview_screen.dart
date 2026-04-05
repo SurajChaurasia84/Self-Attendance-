@@ -22,11 +22,12 @@ class PdfPreviewScreen extends StatelessWidget {
         child: FloatingActionButton(
           child: const Icon(Icons.download),
           onPressed: () async {
+            final messenger = ScaffoldMessenger.of(context);
             await PdfReportService().saveToDownloads(file);
 
-            ScaffoldMessenger.of(
-              context,
-            ).showSnackBar(const SnackBar(content: Text("Saved to Downloads")));
+            messenger.showSnackBar(
+              const SnackBar(content: Text("Saved to Downloads")),
+            );
           },
         ),
       ),
