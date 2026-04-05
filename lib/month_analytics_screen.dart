@@ -11,12 +11,24 @@ class MonthAnalyticsScreen extends StatefulWidget {
     required this.counts,
     required this.totalMarked,
     required this.attendanceMarks,
+    required this.shiftSubtypes,
+    required this.overtimeHours,
+    required this.onAttendanceChanged,
   });
 
   final DateTime monthDate;
   final Map<AttendanceStatus, int> counts;
   final int totalMarked;
   final Map<DateTime, AttendanceStatus> attendanceMarks;
+  final Map<DateTime, ShiftType> shiftSubtypes;
+  final Map<DateTime, double> overtimeHours;
+  final Future<void> Function(
+    DateTime date,
+    AttendanceStatus? status,
+    ShiftType? shiftType,
+    double? overtimeHour,
+  )
+  onAttendanceChanged;
 
   @override
   State<MonthAnalyticsScreen> createState() => _MonthAnalyticsScreenState();
@@ -27,9 +39,6 @@ class _MonthAnalyticsScreenState extends State<MonthAnalyticsScreen> {
   bool _isSaving = false;
   bool _isExpanded = false;
 
-  final Map<DateTime, ShiftType?> _shiftSubtypes = {};
-  final Map<DateTime, double?> _overtimeHours = {};
-
   static const List<String> _weekdays = <String>[
     'SUN',
     'MON',
@@ -39,314 +48,11 @@ class _MonthAnalyticsScreenState extends State<MonthAnalyticsScreen> {
     'FRI',
     'SAT',
   ];
-  String _capitalize(String s) {
-    if (s.isEmpty) return s;
-    return s[0].toUpperCase() + s.substring(1).toLowerCase();
-  }
 
   @override
   void initState() {
     super.initState();
     _visibleMonth = DateTime(widget.monthDate.year, widget.monthDate.month);
-  }
-
-  Future<void> _openMarkAttendance(DateTime selectedDate) async {
-    AttendanceStatus? selectedStatus =
-        widget.attendanceMarks[DateTime(
-          selectedDate.year,
-          selectedDate.month,
-          selectedDate.day,
-        )];
-
-    // Extra variable to track shift subtype if needed (optional)
-    // If shift attendance needs subtype, you can add an enum or string for it.
-    double? overtimeHours;
-    ShiftType? selectedShiftType;
-    final AttendanceStatus?
-    submittedStatus = await showDialog<AttendanceStatus>(
-      context: context,
-      builder: (context) {
-        AttendanceStatus? tempSelectedStatus = selectedStatus;
-        bool shiftExpanded = false;
-
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            Widget buildStatusOption(AttendanceStatus status, Widget icon) {
-              return InkWell(
-                onTap: () {
-                  setDialogState(() {
-                    tempSelectedStatus = status;
-                    shiftExpanded =
-                        false; // collapse shift submenu on selection
-                  });
-                },
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 6),
-                  child: Row(
-                    children: [
-                      icon,
-                      const SizedBox(width: 10),
-                      Text(status.label),
-                    ],
-                  ),
-                ),
-              );
-            }
-
-            Widget buildShiftSubmenu() {
-              return Column(
-                children: [
-                  InkWell(
-                    onTap: () {
-                      setDialogState(() {
-                        tempSelectedStatus = AttendanceStatus.shift;
-                        selectedShiftType = ShiftType.general;
-                        // You can store shift subtype info here if needed
-                        shiftExpanded = false;
-                      });
-                    },
-                    child: const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 6),
-                      child: Row(
-                        children: [
-                          SizedBox(width: 24), // indent to align with icons
-                          Text('General'),
-                        ],
-                      ),
-                    ),
-                  ),
-                  InkWell(
-                    onTap: () {
-                      setDialogState(() {
-                        // Shift subtype: Morning
-                        tempSelectedStatus =
-                            AttendanceStatus.shift; // same enum
-                        selectedShiftType = ShiftType.morning; // track subtype
-                        shiftExpanded = false;
-                      });
-                    },
-                    child: const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 6),
-                      child: Row(
-                        children: [SizedBox(width: 24), Text('Morning')],
-                      ),
-                    ),
-                  ),
-                  InkWell(
-                    onTap: () {
-                      setDialogState(() {
-                        // Shift subtype: Afternoon
-                        tempSelectedStatus = AttendanceStatus.shift;
-                        selectedShiftType =
-                            ShiftType.afternoon; // track subtype
-                        shiftExpanded = false;
-                      });
-                    },
-                    child: const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 6),
-                      child: Row(
-                        children: [SizedBox(width: 24), Text('Afternoon')],
-                      ),
-                    ),
-                  ),
-                  InkWell(
-                    onTap: () {
-                      setDialogState(() {
-                        // Shift subtype: Night
-                        tempSelectedStatus = AttendanceStatus.shift;
-                        selectedShiftType = ShiftType.night; // track subtype
-                        shiftExpanded = false;
-                      });
-                    },
-                    child: const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 6),
-                      child: Row(
-                        children: [SizedBox(width: 24), Text('Night')],
-                      ),
-                    ),
-                  ),
-                  InkWell(
-                    onTap: () {
-                      setDialogState(() {
-                        // Clear shift (means clear attendance)
-                        tempSelectedStatus = null;
-                        shiftExpanded = false;
-                      });
-                    },
-                    child: const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 6),
-                      child: Row(
-                        children: [SizedBox(width: 24), Text('Clear Shift')],
-                      ),
-                    ),
-                  ),
-                ],
-              );
-            }
-
-            return AlertDialog(
-              title: Text(
-                'Mark ${selectedDate.day}/${selectedDate.month}/${selectedDate.year}',
-              ),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    buildStatusOption(
-                      AttendanceStatus.present,
-                      Icon(Icons.check, color: AttendanceStatus.present.color),
-                    ),
-                    buildStatusOption(
-                      AttendanceStatus.absent,
-                      Icon(Icons.close, color: AttendanceStatus.absent.color),
-                    ),
-                    buildStatusOption(
-                      AttendanceStatus.halfDay,
-                      Icon(
-                        Icons.calendar_today_outlined,
-                        color: AttendanceStatus.halfDay.color,
-                      ),
-                    ),
-                    InkWell(
-                      onTap: () {
-                        setDialogState(() {
-                          tempSelectedStatus = AttendanceStatus.overtime;
-                        });
-                      },
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.timer,
-                                color: AttendanceStatus.overtime.color,
-                              ),
-                              const SizedBox(width: 10),
-                              const Text('Overtime'),
-                            ],
-                          ),
-
-                          if (tempSelectedStatus == AttendanceStatus.overtime)
-                            Padding(
-                              padding: const EdgeInsets.only(left: 34, top: 8),
-                              child: TextField(
-                                keyboardType: TextInputType.number,
-                                decoration: const InputDecoration(
-                                  hintText: "Enter hours (e.g. 2.5)",
-                                  border: OutlineInputBorder(),
-                                  isDense: true,
-                                ),
-                                onChanged: (val) {
-                                  overtimeHours = double.tryParse(val);
-                                },
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                    InkWell(
-                      onTap: () {
-                        setDialogState(() {
-                          shiftExpanded = !shiftExpanded;
-                        });
-                      },
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 6),
-                        child: Row(
-                          children: [
-                            Icon(
-                              shiftExpanded
-                                  ? Icons.keyboard_arrow_down
-                                  : Icons.keyboard_arrow_right,
-                              color: Colors.black54,
-                            ),
-                            const SizedBox(width: 10),
-                            const Text('Shift'),
-                          ],
-                        ),
-                      ),
-                    ),
-                    if (shiftExpanded) buildShiftSubmenu(),
-                    buildStatusOption(
-                      AttendanceStatus.holiday,
-                      const Icon(
-                        Icons.more_horiz,
-                        color: Colors.grey,
-                      ), // changed to "Holiday" icon if you want something else change here
-                    ),
-                    InkWell(
-                      onTap: () {
-                        setDialogState(() {
-                          tempSelectedStatus = null; // Clear attendance
-                        });
-                      },
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 6),
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.check_box_outline_blank,
-                              color: Colors.black,
-                            ),
-                            const SizedBox(width: 10),
-                            const Text('Clear'),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Cancel'),
-                ),
-                FilledButton(
-                  onPressed: () => Navigator.pop(context, tempSelectedStatus),
-                  child: const Text('Submit'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-
-    if (submittedStatus == null) {
-      return;
-    }
-
-    final key = DateTime(
-      selectedDate.year,
-      selectedDate.month,
-      selectedDate.day,
-    );
-
-    setState(() {
-      widget.attendanceMarks[key] = submittedStatus;
-
-      // ✅ OVERTIME SAVE
-      if (submittedStatus == AttendanceStatus.overtime) {
-        _overtimeHours[key] = overtimeHours;
-      }
-
-      // ✅ SHIFT SAVE (IMPORTANT FIX)
-      if (submittedStatus == AttendanceStatus.shift) {
-        _shiftSubtypes[key] = selectedShiftType;
-      }
-    });
-
-    if (!mounted) return;
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          '${submittedStatus.label} marked for ${selectedDate.day}/${selectedDate.month}/${selectedDate.year}',
-        ),
-      ),
-    );
   }
 
   @override
@@ -462,20 +168,14 @@ class _MonthAnalyticsScreenState extends State<MonthAnalyticsScreen> {
                       return const _AnalyticsEmptyCell();
                     }
 
-                    final AttendanceStatus? mark =
-                        widget.attendanceMarks[DateTime(
-                          day.year,
-                          day.month,
-                          day.day,
-                        )];
+                    final DateTime key = DateTime(day.year, day.month, day.day);
+                    final AttendanceStatus? mark = widget.attendanceMarks[key];
                     return _AnalyticsDayCell(
                       day: day,
                       mark: mark,
-                      shiftType: _shiftSubtypes[day],
-                      overtimeHours: _overtimeHours[day],
-                      onTap: (selectedDay) {
-                        _openMarkAttendance(selectedDay);
-                      },
+                      shiftType: widget.shiftSubtypes[key],
+                      overtimeHours: widget.overtimeHours[key],
+                      onTap: _openMarkAttendance,
                     );
                   },
                 ),
@@ -593,48 +293,12 @@ class _MonthAnalyticsScreenState extends State<MonthAnalyticsScreen> {
                       ),
                     ],
                     const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            'Percentage : ${summary.attendancePercentage}%',
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                        // Container(
-                        //   padding: const EdgeInsets.symmetric(
-                        //     horizontal: 20,
-                        //     vertical: 10,
-                        //   ),
-                        //   decoration: BoxDecoration(
-                        //     borderRadius: BorderRadius.circular(8),
-                        //     gradient: const LinearGradient(
-                        //       colors: [Color(0xFF5B5B5B), Color(0xFF252525)],
-                        //     ),
-                        //   ),
-                        //   child: const Row(
-                        //     mainAxisSize: MainAxisSize.min,
-                        //     children: [
-                        //       Icon(
-                        //         Icons.info_outline,
-                        //         color: Color(0xFF44D36F),
-                        //         size: 16,
-                        //       ),
-                        //       SizedBox(width: 6),
-                        //       Text(
-                        //         'More Info',
-                        //         style: TextStyle(
-                        //           color: Colors.white,
-                        //           fontWeight: FontWeight.w700,
-                        //         ),
-                        //       ),
-                        //     ],
-                        //   ),
-                        // ),
-                      ],
+                    Text(
+                      'Percentage : ${summary.attendancePercentage}%',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ],
                 ),
@@ -643,6 +307,249 @@ class _MonthAnalyticsScreenState extends State<MonthAnalyticsScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  Future<void> _openMarkAttendance(DateTime selectedDate) async {
+    final DateTime key = DateTime(
+      selectedDate.year,
+      selectedDate.month,
+      selectedDate.day,
+    );
+
+    AttendanceStatus? initialStatus = widget.attendanceMarks[key];
+    ShiftType? initialShiftType = widget.shiftSubtypes[key];
+    double? initialOvertimeHours = widget.overtimeHours[key];
+
+    final _AttendanceDialogResult? result = await showDialog<_AttendanceDialogResult>(
+      context: context,
+      builder: (BuildContext context) {
+        AttendanceStatus? tempStatus = initialStatus;
+        ShiftType? tempShiftType = initialShiftType;
+        double? tempOvertimeHours = initialOvertimeHours;
+        bool shiftExpanded = false;
+        final TextEditingController overtimeController = TextEditingController(
+          text: tempOvertimeHours?.toString(),
+        );
+
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setDialogState) {
+            Widget buildStatusOption(AttendanceStatus status, Widget icon) {
+              return InkWell(
+                onTap: () {
+                  setDialogState(() {
+                    tempStatus = status;
+                    if (status != AttendanceStatus.shift) {
+                      tempShiftType = null;
+                    }
+                    if (status != AttendanceStatus.overtime) {
+                      tempOvertimeHours = null;
+                      overtimeController.clear();
+                    }
+                    shiftExpanded = false;
+                  });
+                },
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: Row(
+                    children: [
+                      icon,
+                      const SizedBox(width: 10),
+                      Text(status.label),
+                    ],
+                  ),
+                ),
+              );
+            }
+
+            return AlertDialog(
+              title: Text(
+                'Mark ${selectedDate.day}/${selectedDate.month}/${selectedDate.year}',
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    buildStatusOption(
+                      AttendanceStatus.present,
+                      Icon(Icons.check, color: AttendanceStatus.present.color),
+                    ),
+                    buildStatusOption(
+                      AttendanceStatus.absent,
+                      Icon(Icons.close, color: AttendanceStatus.absent.color),
+                    ),
+                    buildStatusOption(
+                      AttendanceStatus.halfDay,
+                      Icon(
+                        Icons.calendar_today_outlined,
+                        color: AttendanceStatus.halfDay.color,
+                      ),
+                    ),
+                    InkWell(
+                      onTap: () {
+                        setDialogState(() {
+                          tempStatus = AttendanceStatus.overtime;
+                        });
+                      },
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.timer,
+                                color: AttendanceStatus.overtime.color,
+                              ),
+                              const SizedBox(width: 10),
+                              const Text('Overtime'),
+                            ],
+                          ),
+                          if (tempStatus == AttendanceStatus.overtime)
+                            Padding(
+                              padding: const EdgeInsets.only(left: 34, top: 8),
+                              child: TextField(
+                                controller: overtimeController,
+                                keyboardType: const TextInputType.numberWithOptions(
+                                  decimal: true,
+                                ),
+                                decoration: const InputDecoration(
+                                  hintText: 'Enter hours (e.g. 2.5)',
+                                  border: OutlineInputBorder(),
+                                  isDense: true,
+                                ),
+                                onChanged: (String value) {
+                                  tempOvertimeHours = double.tryParse(value);
+                                },
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    InkWell(
+                      onTap: () {
+                        setDialogState(() {
+                          shiftExpanded = !shiftExpanded;
+                          tempStatus = AttendanceStatus.shift;
+                        });
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        child: Row(
+                          children: [
+                            Icon(
+                              shiftExpanded
+                                  ? Icons.keyboard_arrow_down
+                                  : Icons.keyboard_arrow_right,
+                              color: Colors.black54,
+                            ),
+                            const SizedBox(width: 10),
+                            const Text('Shift'),
+                          ],
+                        ),
+                      ),
+                    ),
+                    if (shiftExpanded)
+                      Column(
+                        children: ShiftType.values.map((ShiftType type) {
+                          return InkWell(
+                            onTap: () {
+                              setDialogState(() {
+                                tempStatus = AttendanceStatus.shift;
+                                tempShiftType = type;
+                                shiftExpanded = false;
+                              });
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 6),
+                              child: Row(
+                                children: [
+                                  const SizedBox(width: 24),
+                                  Text(_shiftTypeLabel(type)),
+                                ],
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    buildStatusOption(
+                      AttendanceStatus.holiday,
+                      const Icon(Icons.beach_access, color: Colors.red),
+                    ),
+                    InkWell(
+                      onTap: () {
+                        Navigator.pop(
+                          context,
+                          const _AttendanceDialogResult(
+                            status: null,
+                            shiftType: null,
+                            overtimeHour: null,
+                            shouldClear: true,
+                          ),
+                        );
+                      },
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 6),
+                        child: Row(
+                          children: [
+                            Icon(Icons.delete_outline, color: Colors.black),
+                            SizedBox(width: 10),
+                            Text('Clear'),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: tempStatus == null
+                      ? null
+                      : () => Navigator.pop(
+                          context,
+                          _AttendanceDialogResult(
+                            status: tempStatus,
+                            shiftType: tempShiftType,
+                            overtimeHour: tempOvertimeHours,
+                            shouldClear: false,
+                          ),
+                        ),
+                  child: const Text('Submit'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (result == null) {
+      return;
+    }
+
+    await widget.onAttendanceChanged(
+      key,
+      result.shouldClear ? null : result.status,
+      result.shiftType,
+      result.overtimeHour,
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {});
+
+    final String message = result.shouldClear
+        ? 'Attendance cleared for ${selectedDate.day}/${selectedDate.month}/${selectedDate.year}'
+        : '${result.status!.label} marked for ${selectedDate.day}/${selectedDate.month}/${selectedDate.year}';
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
     );
   }
 
@@ -655,6 +562,8 @@ class _MonthAnalyticsScreenState extends State<MonthAnalyticsScreen> {
       final file = await PdfReportService().generateReportFromMarks(
         months: [_visibleMonth],
         attendanceMarks: widget.attendanceMarks,
+        shiftSubtypes: widget.shiftSubtypes,
+        overtimeHours: widget.overtimeHours,
       );
 
       await PdfReportService().saveToDownloads(file);
@@ -741,6 +650,40 @@ class _MonthAnalyticsScreenState extends State<MonthAnalyticsScreen> {
 
     return cells;
   }
+
+  String _capitalize(String value) {
+    if (value.isEmpty) {
+      return value;
+    }
+    return value[0].toUpperCase() + value.substring(1).toLowerCase();
+  }
+
+  String _shiftTypeLabel(ShiftType type) {
+    switch (type) {
+      case ShiftType.general:
+        return 'General';
+      case ShiftType.morning:
+        return 'Morning';
+      case ShiftType.afternoon:
+        return 'Afternoon';
+      case ShiftType.night:
+        return 'Night';
+    }
+  }
+}
+
+class _AttendanceDialogResult {
+  const _AttendanceDialogResult({
+    required this.status,
+    required this.shiftType,
+    required this.overtimeHour,
+    required this.shouldClear,
+  });
+
+  final AttendanceStatus? status;
+  final ShiftType? shiftType;
+  final double? overtimeHour;
+  final bool shouldClear;
 }
 
 class _MonthSummary {
@@ -849,44 +792,43 @@ class _AnalyticsDayCell extends StatelessWidget {
 
   final DateTime day;
   final AttendanceStatus? mark;
-  final Function(DateTime) onTap;
+  final void Function(DateTime day) onTap;
   final ShiftType? shiftType;
   final double? overtimeHours;
 
   @override
   Widget build(BuildContext context) {
-    final Color backgroundColor = mark?.color ?? Colors.white;
+    final bool isHoliday = mark == AttendanceStatus.holiday;
+    final Color backgroundColor = isHoliday
+        ? Colors.white
+        : mark?.color ?? Colors.white;
     final Color textColor = backgroundColor.computeLuminance() < 0.45
         ? Colors.white
         : Colors.black;
 
     String? shiftText;
-    if (shiftType != null) {
-      switch (shiftType) {
-        case ShiftType.morning:
-          shiftText = 'M';
-          break;
-        case ShiftType.afternoon:
-          shiftText = 'A';
-          break;
-        case ShiftType.night:
-          shiftText = 'N';
-          break;
-        case ShiftType.general:
-          shiftText = 'G';
-          break;
-        default:
-          shiftText = null;
-      }
+    switch (shiftType) {
+      case ShiftType.morning:
+        shiftText = 'M';
+      case ShiftType.afternoon:
+        shiftText = 'A';
+      case ShiftType.night:
+        shiftText = 'N';
+      case ShiftType.general:
+        shiftText = 'G';
+      case null:
+        shiftText = null;
     }
 
     return InkWell(
       onTap: () => onTap(day),
-      child: Container(
-        decoration: BoxDecoration(
-          color: backgroundColor,
-          border: Border.all(
-            color: mark == AttendanceStatus.shift
+        child: Container(
+          decoration: BoxDecoration(
+            color: backgroundColor,
+            border: Border.all(
+              color: isHoliday
+                  ? AttendanceStatus.holiday.color
+                  : mark == AttendanceStatus.shift
                 ? Colors.blue.shade700
                 : Colors.black,
             width: mark == AttendanceStatus.shift ? 2 : 0.5,
@@ -899,15 +841,26 @@ class _AnalyticsDayCell extends StatelessWidget {
               '${day.day}',
               style: TextStyle(
                 fontSize: 12,
-                color: textColor,
+                color: isHoliday ? AttendanceStatus.holiday.color : textColor,
                 fontWeight: FontWeight.w500,
               ),
             ),
-            const SizedBox(height: 4),
+            if (isHoliday)
+              Text(
+                'Holiday',
+                style: TextStyle(
+                  fontSize: 8,
+                  color: AttendanceStatus.holiday.color,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             if (mark == AttendanceStatus.overtime && overtimeHours != null)
               Text(
-                'OT: ${overtimeHours!.toStringAsFixed(1)}',
-                style: TextStyle(fontSize: 10,color: textColor,),
+                'OT ${overtimeHours!.toStringAsFixed(1)}',
+                style: TextStyle(
+                  fontSize: 9,
+                  color: textColor,
+                ),
               ),
             if (shiftText != null)
               Text(
@@ -949,5 +902,3 @@ class _AnalyticsLegendItem extends StatelessWidget {
     );
   }
 }
-
-enum ShiftType { morning, afternoon, night, general }
