@@ -69,8 +69,9 @@ class _BannerAdBarState extends State<BannerAdBar> {
     final BannerAd banner = BannerAd(
       size: adaptiveSize,
       adUnitId: Platform.isAndroid
-          ? 'ca-app-pub-3940256099942544/6300978111'
-          : 'ca-app-pub-3940256099942544/2934735716',
+      //add your own ad unit id here for testing, or use the test ad unit id provided by Google
+          ? ''
+          : '',
       request: const AdRequest(),
       listener: BannerAdListener(
         onAdLoaded: (Ad ad) {
