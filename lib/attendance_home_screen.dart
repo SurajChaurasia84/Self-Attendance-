@@ -20,13 +20,18 @@ class _AttendanceHomeScreenState extends State<AttendanceHomeScreen> {
   static const String _kStoredYearKey = 'attendance_selected_year';
   static const String _kStoredDateKey = 'attendance_selected_date';
   static const String _kStoredMarksKey = 'attendance_marks';
+  static const String _kStoredShiftSubtypesKey = 'attendance_shift_subtypes';
+  static const String _kStoredOvertimeHoursKey = 'attendance_overtime_hours';
 
   late int _year;
   DateTime? _selectedDate;
   final Map<DateTime, AttendanceStatus> _attendanceMarks =
       <DateTime, AttendanceStatus>{};
+  final Map<DateTime, ShiftType> _shiftSubtypes = <DateTime, ShiftType>{};
+  final Map<DateTime, double> _overtimeHours = <DateTime, double>{};
   bool _isLoaded = false;
   int _adRefreshToken = 0;
+  AttendanceStatus? _activeFilter;
 
   Future<void> _openPrivacyPolicy() async {
     final Uri url = Uri.parse(
@@ -189,6 +194,7 @@ class _AttendanceHomeScreenState extends State<AttendanceHomeScreen> {
                                 monthDate: DateTime(_year, index + 1),
                                 selectedDate: _selectedDate,
                                 attendanceMarks: _attendanceMarks,
+                                activeFilter: _activeFilter,
                                 onMonthTap: (DateTime month) =>
                                     _openMonthAnalyticsScreen(month),
                                 onDayTap: (DateTime day) async {
@@ -225,7 +231,15 @@ class _AttendanceHomeScreenState extends State<AttendanceHomeScreen> {
               color: kSheetColor,
               child: Padding(
                 padding: const EdgeInsets.only(bottom: 40.0),
-                child: _StatusStrip(palette: palette),
+                child: _StatusStrip(
+                  palette: palette,
+                  activeFilter: _activeFilter,
+                  onFilterTap: (AttendanceStatus status) {
+                    setState(() {
+                      _activeFilter = _activeFilter == status ? null : status;
+                    });
+                  },
+                ),
               ),
             ),
           ],
@@ -256,6 +270,9 @@ class _AttendanceHomeScreenState extends State<AttendanceHomeScreen> {
           counts: counts,
           totalMarked: totalMarked,
           attendanceMarks: _attendanceMarks,
+          shiftSubtypes: _shiftSubtypes,
+          overtimeHours: _overtimeHours,
+          onAttendanceChanged: _handleAttendanceChanged,
         ),
       ),
     );
@@ -285,8 +302,17 @@ class _AttendanceHomeScreenState extends State<AttendanceHomeScreen> {
     final int savedYear = prefs.getInt(_kStoredYearKey) ?? today.year;
     final String? savedDate = prefs.getString(_kStoredDateKey);
     final String? savedMarks = prefs.getString(_kStoredMarksKey);
+    final String? savedShiftSubtypes = prefs.getString(
+      _kStoredShiftSubtypesKey,
+    );
+    final String? savedOvertimeHours = prefs.getString(
+      _kStoredOvertimeHoursKey,
+    );
     final Map<DateTime, AttendanceStatus> parsedMarks =
         <DateTime, AttendanceStatus>{};
+    final Map<DateTime, ShiftType> parsedShiftSubtypes =
+        <DateTime, ShiftType>{};
+    final Map<DateTime, double> parsedOvertimeHours = <DateTime, double>{};
 
     if (savedMarks != null && savedMarks.isNotEmpty) {
       final Map<String, dynamic> rawMap =
@@ -302,6 +328,36 @@ class _AttendanceHomeScreenState extends State<AttendanceHomeScreen> {
         }
         if (date != null && matchedStatus != null) {
           parsedMarks[_normalizeDate(date)] = matchedStatus;
+        }
+      }
+    }
+
+    if (savedShiftSubtypes != null && savedShiftSubtypes.isNotEmpty) {
+      final Map<String, dynamic> rawMap =
+          jsonDecode(savedShiftSubtypes) as Map<String, dynamic>;
+      for (final MapEntry<String, dynamic> entry in rawMap.entries) {
+        final DateTime? date = DateTime.tryParse(entry.key);
+        ShiftType? matchedType;
+        for (final ShiftType type in ShiftType.values) {
+          if (type.name == entry.value) {
+            matchedType = type;
+            break;
+          }
+        }
+        if (date != null && matchedType != null) {
+          parsedShiftSubtypes[_normalizeDate(date)] = matchedType;
+        }
+      }
+    }
+
+    if (savedOvertimeHours != null && savedOvertimeHours.isNotEmpty) {
+      final Map<String, dynamic> rawMap =
+          jsonDecode(savedOvertimeHours) as Map<String, dynamic>;
+      for (final MapEntry<String, dynamic> entry in rawMap.entries) {
+        final DateTime? date = DateTime.tryParse(entry.key);
+        final num? hours = entry.value as num?;
+        if (date != null && hours != null) {
+          parsedOvertimeHours[_normalizeDate(date)] = hours.toDouble();
         }
       }
     }
@@ -325,6 +381,12 @@ class _AttendanceHomeScreenState extends State<AttendanceHomeScreen> {
       _attendanceMarks
         ..clear()
         ..addAll(parsedMarks);
+      _shiftSubtypes
+        ..clear()
+        ..addAll(parsedShiftSubtypes);
+      _overtimeHours
+        ..clear()
+        ..addAll(parsedOvertimeHours);
       _isLoaded = true;
     });
   }
@@ -332,10 +394,20 @@ class _AttendanceHomeScreenState extends State<AttendanceHomeScreen> {
   Future<void> _persistAttendance() async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     final Map<String, String> encodedMarks = <String, String>{};
+    final Map<String, String> encodedShiftSubtypes = <String, String>{};
+    final Map<String, double> encodedOvertimeHours = <String, double>{};
 
     for (final MapEntry<DateTime, AttendanceStatus> entry
         in _attendanceMarks.entries) {
       encodedMarks[entry.key.toIso8601String()] = entry.value.name;
+    }
+
+    for (final MapEntry<DateTime, ShiftType> entry in _shiftSubtypes.entries) {
+      encodedShiftSubtypes[entry.key.toIso8601String()] = entry.value.name;
+    }
+
+    for (final MapEntry<DateTime, double> entry in _overtimeHours.entries) {
+      encodedOvertimeHours[entry.key.toIso8601String()] = entry.value;
     }
 
     await prefs.setInt(_kStoredYearKey, _year);
@@ -346,6 +418,46 @@ class _AttendanceHomeScreenState extends State<AttendanceHomeScreen> {
           : _normalizeDate(_selectedDate!).toIso8601String(),
     );
     await prefs.setString(_kStoredMarksKey, jsonEncode(encodedMarks));
+    await prefs.setString(
+      _kStoredShiftSubtypesKey,
+      jsonEncode(encodedShiftSubtypes),
+    );
+    await prefs.setString(
+      _kStoredOvertimeHoursKey,
+      jsonEncode(encodedOvertimeHours),
+    );
+  }
+
+  Future<void> _handleAttendanceChanged(
+    DateTime date,
+    AttendanceStatus? status,
+    ShiftType? shiftType,
+    double? overtimeHour,
+  ) async {
+    final DateTime key = _normalizeDate(date);
+
+    setState(() {
+      if (status == null) {
+        _attendanceMarks.remove(key);
+        _shiftSubtypes.remove(key);
+        _overtimeHours.remove(key);
+      } else {
+        _attendanceMarks[key] = status;
+        if (status == AttendanceStatus.shift && shiftType != null) {
+          _shiftSubtypes[key] = shiftType;
+        } else {
+          _shiftSubtypes.remove(key);
+        }
+
+        if (status == AttendanceStatus.overtime && overtimeHour != null) {
+          _overtimeHours[key] = overtimeHour;
+        } else {
+          _overtimeHours.remove(key);
+        }
+      }
+    });
+
+    await _persistAttendance();
   }
 }
 
@@ -354,6 +466,7 @@ class _MiniMonth extends StatelessWidget {
     required this.monthDate,
     required this.selectedDate,
     required this.attendanceMarks,
+    required this.activeFilter,
     required this.onMonthTap,
     required this.onDayTap,
   });
@@ -361,6 +474,7 @@ class _MiniMonth extends StatelessWidget {
   final DateTime monthDate;
   final DateTime? selectedDate;
   final Map<DateTime, AttendanceStatus> attendanceMarks;
+  final AttendanceStatus? activeFilter;
   final ValueChanged<DateTime> onMonthTap;
   final ValueChanged<DateTime> onDayTap;
 
@@ -439,6 +553,7 @@ class _MiniMonth extends StatelessWidget {
                   isSunday: day.weekday == DateTime.sunday,
                   isSelected: _isSameDay(selectedDate, day),
                   mark: attendanceMarks[normalizedDay],
+                  activeFilter: activeFilter,
                   onTap: () => onDayTap(normalizedDay),
                 );
               },
@@ -484,6 +599,7 @@ class _MiniDayCell extends StatelessWidget {
     required this.isSunday,
     required this.isSelected,
     required this.mark,
+    required this.activeFilter,
     required this.onTap,
   });
 
@@ -491,10 +607,14 @@ class _MiniDayCell extends StatelessWidget {
   final bool isSunday;
   final bool isSelected;
   final AttendanceStatus? mark;
+  final AttendanceStatus? activeFilter;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
+    final AttendanceStatus? visibleMark =
+        activeFilter == null || mark == activeFilter ? mark : null;
+
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -503,7 +623,7 @@ class _MiniDayCell extends StatelessWidget {
           painter: _AttendanceDayPainter(
             baseColor: isSunday ? kSundayColor : kSheetColor,
             borderColor: const Color(0xFF808080),
-            markColor: mark?.color,
+            markColor: visibleMark?.color,
             highlightColor: isSelected ? kPrimaryColor : null,
           ),
           child: Center(
@@ -512,7 +632,7 @@ class _MiniDayCell extends StatelessWidget {
               style: TextStyle(
                 fontSize: 8,
                 fontWeight: FontWeight.w500,
-                color: (mark?.color.computeLuminance() ?? 1) < 0.5
+                color: (visibleMark?.color.computeLuminance() ?? 1) < 0.5
                     ? Colors.white
                     : const Color(0xFF4E4E4E),
               ),
@@ -565,19 +685,33 @@ class _AttendanceDayPainter extends CustomPainter {
 }
 
 class _StatusStrip extends StatelessWidget {
-  const _StatusStrip({required this.palette});
+  const _StatusStrip({
+    required this.palette,
+    required this.activeFilter,
+    required this.onFilterTap,
+  });
 
   final CalendarPalette palette;
+  final AttendanceStatus? activeFilter;
+  final ValueChanged<AttendanceStatus> onFilterTap;
 
   @override
   Widget build(BuildContext context) {
     final List<_StripItemData> items = <_StripItemData>[
-      _StripItemData('Present', palette.presentColor),
-      _StripItemData('Absent', palette.absentColor),
-      _StripItemData('Half Day', palette.halfDayColor),
-      _StripItemData('Overtime', palette.overtimeColor),
-      _StripItemData('Shift', palette.shiftColor),
-      _StripItemData('Holiday', palette.holidayColor),
+      _StripItemData('Present', palette.presentColor, AttendanceStatus.present),
+      _StripItemData('Absent', palette.absentColor, AttendanceStatus.absent),
+      _StripItemData(
+        'Half Day',
+        palette.halfDayColor,
+        AttendanceStatus.halfDay,
+      ),
+      _StripItemData(
+        'Overtime',
+        palette.overtimeColor,
+        AttendanceStatus.overtime,
+      ),
+      _StripItemData('Shift', palette.shiftColor, AttendanceStatus.shift),
+      _StripItemData('Holiday', palette.holidayColor, AttendanceStatus.holiday),
     ];
 
     return SizedBox(
@@ -586,20 +720,26 @@ class _StatusStrip extends StatelessWidget {
         children: items
             .map(
               (_StripItemData item) => Expanded(
-                child: Container(
-                  width: double.infinity,
-                  color: item.color,
-                  alignment: Alignment.center,
-                  child: RotatedBox(
-                    quarterTurns: 1,
-                    child: Text(
-                      item.label,
-                      style: TextStyle(
-                        color: item.color.computeLuminance() > 0.6
-                            ? Colors.black87
-                            : Colors.white,
-                        fontSize: 8,
-                        fontWeight: FontWeight.w600,
+                child: InkWell(
+                  onTap: () => onFilterTap(item.status),
+                  child: Container(
+                    width: double.infinity,
+                    color: item.color,
+                    alignment: Alignment.center,
+                    child: RotatedBox(
+                      quarterTurns: 1,
+                      child: Text(
+                        item.label,
+                        style: TextStyle(
+                          color: item.color.computeLuminance() > 0.6
+                              ? Colors.black87
+                              : Colors.white,
+                          fontSize: 8,
+                          fontWeight: FontWeight.w600,
+                          decoration: activeFilter == item.status
+                              ? TextDecoration.underline
+                              : TextDecoration.none,
+                        ),
                       ),
                     ),
                   ),
@@ -613,8 +753,9 @@ class _StatusStrip extends StatelessWidget {
 }
 
 class _StripItemData {
-  const _StripItemData(this.label, this.color);
+  const _StripItemData(this.label, this.color, this.status);
 
   final String label;
   final Color color;
+  final AttendanceStatus status;
 }
