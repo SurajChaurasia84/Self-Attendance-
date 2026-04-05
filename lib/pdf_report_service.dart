@@ -1,66 +1,71 @@
 import 'dart:io';
-import 'package:path_provider/path_provider.dart';
+
 import 'package:media_store_plus/media_store_plus.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
 import 'attendance_models.dart';
 
 class PdfReportService {
-  /// 🔥 MAIN FUNCTION (REAL DATA ONLY)
   Future<File> generateReportFromMarks({
     required List<DateTime> months,
     required Map<DateTime, AttendanceStatus> attendanceMarks,
+    required Map<DateTime, ShiftType> shiftSubtypes,
+    required Map<DateTime, double> overtimeHours,
   }) async {
-    final document = pw.Document();
+    final pw.Document document = pw.Document();
 
-    // Latest month first
-    months.sort((a, b) => b.compareTo(a));
+    months.sort((DateTime a, DateTime b) => b.compareTo(a));
 
-    for (final month in months) {
-      final summary = _calculateSummary(month, attendanceMarks);
-      document.addPage(_buildPage(month, summary, attendanceMarks));
+    for (final DateTime month in months) {
+      final Map<String, dynamic> summary = _calculateSummary(month, attendanceMarks);
+      document.addPage(
+        _buildPage(
+          month,
+          summary,
+          attendanceMarks,
+          shiftSubtypes,
+          overtimeHours,
+        ),
+      );
     }
 
-    final bytes = await document.save();
-    return await _saveTemp(bytes);
+    final List<int> bytes = await document.save();
+    return _saveTemp(bytes);
   }
 
-  /// 🔹 Summary Calculation (Same as UI)
   Map<String, dynamic> _calculateSummary(
     DateTime month,
     Map<DateTime, AttendanceStatus> marks,
   ) {
-    final counts = {for (var status in AttendanceStatus.values) status: 0};
+    final Map<AttendanceStatus, int> counts = <AttendanceStatus, int>{
+      for (final AttendanceStatus status in AttendanceStatus.values) status: 0,
+    };
 
-    for (final entry in marks.entries) {
+    for (final MapEntry<DateTime, AttendanceStatus> entry in marks.entries) {
       if (entry.key.year == month.year && entry.key.month == month.month) {
         counts[entry.value] = (counts[entry.value] ?? 0) + 1;
       }
     }
 
-    final present = counts[AttendanceStatus.present] ?? 0;
-    final absent = counts[AttendanceStatus.absent] ?? 0;
-    final halfDay = counts[AttendanceStatus.halfDay] ?? 0;
-    final overtime = counts[AttendanceStatus.overtime] ?? 0;
-    final shift = counts[AttendanceStatus.shift] ?? 0;
-    final holiday = counts[AttendanceStatus.holiday] ?? 0;
-
-    final total = present + absent + halfDay + overtime + shift + holiday;
-
-    return {"counts": counts, "total": total};
+    return <String, dynamic>{
+      'counts': counts,
+      'total': counts.values.fold(0, (int sum, int count) => sum + count),
+    };
   }
 
-  /// 🔹 PDF Page
   pw.Page _buildPage(
     DateTime month,
     Map<String, dynamic> summary,
     Map<DateTime, AttendanceStatus> attendanceMarks,
+    Map<DateTime, ShiftType> shiftSubtypes,
+    Map<DateTime, double> overtimeHours,
   ) {
-    final counts = summary['counts'] as Map<AttendanceStatus, int>;
-    final total = summary['total'];
-
-    final monthLabel = monthName(month.month);
+    final Map<AttendanceStatus, int> counts =
+        summary['counts'] as Map<AttendanceStatus, int>;
+    final int total = summary['total'] as int;
+    final String monthLabel = monthName(month.month);
 
     return pw.Page(
       pageFormat: PdfPageFormat.a4,
@@ -70,15 +75,15 @@ class PdfReportService {
           children: [
             pw.Text(
               '$monthLabel ${month.year} Attendance Report',
-              style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold),
+              style: pw.TextStyle(
+                fontSize: 20,
+                fontWeight: pw.FontWeight.bold,
+              ),
             ),
-
             pw.SizedBox(height: 10),
             pw.Text('Total marked days: $total'),
-
             pw.SizedBox(height: 20),
-            _buildCalendar(month, attendanceMarks),
-
+            _buildCalendar(month, attendanceMarks, shiftSubtypes, overtimeHours),
             pw.SizedBox(height: 20),
             pw.Table(
               border: pw.TableBorder.all(),
@@ -89,26 +94,34 @@ class PdfReportService {
                     _cell('Count', isHeader: true),
                   ],
                 ),
-
-                for (final status in AttendanceStatus.values)
+                for (final AttendanceStatus status in AttendanceStatus.values)
                   pw.TableRow(
                     children: [
                       pw.Padding(
                         padding: const pw.EdgeInsets.all(10),
-                        child: _statusWithColor(status), 
+                        child: _statusWithColor(status),
                       ),
                       _cell('${counts[status] ?? 0}'),
                     ],
                   ),
               ],
             ),
+            pw.SizedBox(height: 20),
+            pw.Text(
+              'Shift / Overtime Details',
+              style: pw.TextStyle(
+                fontSize: 14,
+                fontWeight: pw.FontWeight.bold,
+              ),
+            ),
+            pw.SizedBox(height: 8),
+            _buildDetailsTable(month, attendanceMarks, shiftSubtypes, overtimeHours),
           ],
         );
       },
     );
   }
 
-  /// 🔹 Cell
   pw.Widget _cell(String text, {bool isHeader = false}) {
     return pw.Padding(
       padding: const pw.EdgeInsets.all(10),
@@ -125,44 +138,67 @@ class PdfReportService {
   pw.Widget _buildCalendar(
     DateTime month,
     Map<DateTime, AttendanceStatus> marks,
+    Map<DateTime, ShiftType> shiftSubtypes,
+    Map<DateTime, double> overtimeHours,
   ) {
-    final firstDay = DateTime(month.year, month.month, 1);
-    final daysInMonth = DateTime(month.year, month.month + 1, 0).day;
-    final startOffset = firstDay.weekday % 7;
+    final DateTime firstDay = DateTime(month.year, month.month, 1);
+    final int daysInMonth = DateTime(month.year, month.month + 1, 0).day;
+    final int startOffset = firstDay.weekday % 7;
+    final List<pw.Widget> cells = <pw.Widget>[];
 
-    final List<pw.Widget> cells = [];
-
-    // Empty cells
     for (int i = 0; i < startOffset; i++) {
       cells.add(pw.Container());
     }
 
-    // Days
     for (int day = 1; day <= daysInMonth; day++) {
-      final date = DateTime(month.year, month.month, day);
-      final status = marks[date];
+      final DateTime date = DateTime(month.year, month.month, day);
+      final AttendanceStatus? status = marks[date];
+      final ShiftType? shiftType = shiftSubtypes[date];
+      final double? overtimeHour = overtimeHours[date];
 
       PdfColor bgColor = PdfColors.white;
+      String? subtitle;
 
       if (status != null) {
         bgColor = PdfColor.fromInt(status.color.toARGB32());
+        if (status == AttendanceStatus.shift && shiftType != null) {
+          subtitle = _shiftShortLabel(shiftType);
+        } else if (status == AttendanceStatus.overtime && overtimeHour != null) {
+          subtitle = 'OT ${overtimeHour.toStringAsFixed(1)}';
+        }
       }
 
       cells.add(
         pw.Container(
-          alignment: pw.Alignment.center,
           decoration: pw.BoxDecoration(
             color: bgColor,
             border: pw.Border.all(width: 0.3),
           ),
-          child: pw.Text(
-            '$day',
-            style: pw.TextStyle(
-              fontSize: 17,
-              color: bgColor == PdfColors.white
-                  ? PdfColors.black
-                  : PdfColors.white,
-            ),
+          child: pw.Column(
+            mainAxisAlignment: pw.MainAxisAlignment.center,
+            children: [
+              pw.Text(
+                '$day',
+                style: pw.TextStyle(
+                  fontSize: 14,
+                  color: bgColor == PdfColors.white
+                      ? PdfColors.black
+                      : PdfColors.white,
+                ),
+              ),
+              if (subtitle != null)
+                pw.SizedBox(height: 4),
+              if (subtitle != null)
+                pw.Text(
+                  subtitle,
+                  style: pw.TextStyle(
+                    fontSize: 9,
+                    color: bgColor == PdfColors.white
+                        ? PdfColors.black
+                        : PdfColors.white,
+                  ),
+                ),
+            ],
           ),
         ),
       );
@@ -173,21 +209,80 @@ class PdfReportService {
         pw.Row(
           children: ['S', 'M', 'T', 'W', 'T', 'F', 'S']
               .map(
-                (e) => pw.Expanded(
+                (String e) => pw.Expanded(
                   child: pw.Center(
-                    child: pw.Text(e, style: pw.TextStyle(fontSize: 17)),
+                    child: pw.Text(e, style: const pw.TextStyle(fontSize: 12)),
                   ),
                 ),
               )
               .toList(),
         ),
-        pw.GridView(crossAxisCount: 7, childAspectRatio: 1, children: cells),
+        pw.SizedBox(height: 4),
+        pw.GridView(
+          crossAxisCount: 7,
+          childAspectRatio: 1,
+          children: cells,
+        ),
       ],
     );
   }
 
+  pw.Widget _buildDetailsTable(
+    DateTime month,
+    Map<DateTime, AttendanceStatus> marks,
+    Map<DateTime, ShiftType> shiftSubtypes,
+    Map<DateTime, double> overtimeHours,
+  ) {
+    final List<DateTime> detailDates = marks.keys
+        .where(
+          (DateTime date) =>
+              date.year == month.year &&
+              date.month == month.month &&
+              (marks[date] == AttendanceStatus.shift ||
+                  marks[date] == AttendanceStatus.overtime),
+        )
+        .toList()
+      ..sort();
+
+    if (detailDates.isEmpty) {
+      return pw.Text('No shift or overtime details for this month.');
+    }
+
+    final List<pw.TableRow> rows = <pw.TableRow>[
+      pw.TableRow(
+        children: [
+          _cell('Date', isHeader: true),
+          _cell('Type', isHeader: true),
+          _cell('Details', isHeader: true),
+        ],
+      ),
+    ];
+
+    for (final DateTime date in detailDates) {
+      final AttendanceStatus status = marks[date]!;
+      String details = '-';
+      if (status == AttendanceStatus.shift && shiftSubtypes[date] != null) {
+        details = _shiftLongLabel(shiftSubtypes[date]!);
+      } else if (status == AttendanceStatus.overtime && overtimeHours[date] != null) {
+        details = '${overtimeHours[date]!.toStringAsFixed(1)} hrs';
+      }
+
+      rows.add(
+        pw.TableRow(
+          children: [
+            _cell('${date.day}/${date.month}/${date.year}'),
+            _cell(status.label),
+            _cell(details),
+          ],
+        ),
+      );
+    }
+
+    return pw.Table(border: pw.TableBorder.all(), children: rows);
+  }
+
   pw.Widget _statusWithColor(AttendanceStatus status) {
-    final color = PdfColor.fromInt(status.color.toARGB32());
+    final PdfColor color = PdfColor.fromInt(status.color.toARGB32());
 
     return pw.Row(
       children: [
@@ -205,22 +300,46 @@ class PdfReportService {
     );
   }
 
-  /// 🔹 Temp Save
   Future<File> _saveTemp(List<int> bytes) async {
-    final dir = await getTemporaryDirectory();
-    final file = File(
+    final Directory dir = await getTemporaryDirectory();
+    final File file = File(
       '${dir.path}/attendance_${DateTime.now().millisecondsSinceEpoch}.pdf',
     );
     await file.writeAsBytes(bytes, flush: true);
     return file;
   }
 
-  /// 🔥 Save to Downloads
   Future<void> saveToDownloads(File file) async {
     await MediaStore().saveFile(
       tempFilePath: file.path,
       dirType: DirType.download,
       dirName: DirName.download,
     );
+  }
+
+  String _shiftShortLabel(ShiftType type) {
+    switch (type) {
+      case ShiftType.morning:
+        return 'M';
+      case ShiftType.afternoon:
+        return 'A';
+      case ShiftType.night:
+        return 'N';
+      case ShiftType.general:
+        return 'G';
+    }
+  }
+
+  String _shiftLongLabel(ShiftType type) {
+    switch (type) {
+      case ShiftType.morning:
+        return 'Morning';
+      case ShiftType.afternoon:
+        return 'Afternoon';
+      case ShiftType.night:
+        return 'Night';
+      case ShiftType.general:
+        return 'General';
+    }
   }
 }
