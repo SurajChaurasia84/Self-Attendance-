@@ -56,3 +56,4 @@ class MonthReportData {
     required this.totalMarked,
   });
 }
+enum ShiftType { morning, afternoon, night, general }

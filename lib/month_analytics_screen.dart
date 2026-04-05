@@ -907,7 +907,7 @@ class _AnalyticsDayCell extends StatelessWidget {
             if (mark == AttendanceStatus.overtime && overtimeHours != null)
               Text(
                 'OT: ${overtimeHours!.toStringAsFixed(1)}',
-                style: TextStyle(fontSize: 10),
+                style: TextStyle(fontSize: 10,color: textColor,),
               ),
             if (shiftText != null)
               Text(
