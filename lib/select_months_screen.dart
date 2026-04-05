@@ -5,8 +5,15 @@ import 'pdf_preview_screen.dart';
 
 class SelectMonthsScreen extends StatefulWidget {
   final Map<DateTime, AttendanceStatus> attendanceMarks;
+  final Map<DateTime, ShiftType> shiftSubtypes;
+  final Map<DateTime, double> overtimeHours;
 
-  const SelectMonthsScreen({super.key, required this.attendanceMarks});
+  const SelectMonthsScreen({
+    super.key,
+    required this.attendanceMarks,
+    this.shiftSubtypes = const <DateTime, ShiftType>{},
+    this.overtimeHours = const <DateTime, double>{},
+  });
 
   @override
   State<SelectMonthsScreen> createState() => _SelectMonthsScreenState();
@@ -67,15 +74,17 @@ class _SelectMonthsScreenState extends State<SelectMonthsScreen> {
           onPressed: selectedMonths.isEmpty
               ? null
               : () async {
+                  final navigator = Navigator.of(context);
                   final file = await PdfReportService().generateReportFromMarks(
                     months: selectedMonths,
                     attendanceMarks: widget.attendanceMarks,
+                    shiftSubtypes: widget.shiftSubtypes,
+                    overtimeHours: widget.overtimeHours,
                   );
 
                   if (!mounted) return;
 
-                  Navigator.push(
-                    context,
+                  navigator.push(
                     MaterialPageRoute(
                       builder: (_) => PdfPreviewScreen(file: file),
                     ),
