@@ -1,6 +1,6 @@
 {
-    "name": "daily_attendance",
-    "short_name": "daily_attendance",
+    "name": "Daily Attendance",
+    "short_name": "Daily Attendance",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
