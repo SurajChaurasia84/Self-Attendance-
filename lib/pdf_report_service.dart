@@ -19,7 +19,11 @@ class PdfReportService {
     months.sort((DateTime a, DateTime b) => b.compareTo(a));
 
     for (final DateTime month in months) {
-      final Map<String, dynamic> summary = _calculateSummary(month, attendanceMarks);
+      final Map<String, dynamic> summary = _calculateSummary(
+        month,
+        attendanceMarks,
+        overtimeHours,
+      );
       document.addPage(
         _buildPage(
           month,
@@ -38,10 +42,12 @@ class PdfReportService {
   Map<String, dynamic> _calculateSummary(
     DateTime month,
     Map<DateTime, AttendanceStatus> marks,
+    Map<DateTime, double> overtimeHours,
   ) {
     final Map<AttendanceStatus, int> counts = <AttendanceStatus, int>{
       for (final AttendanceStatus status in AttendanceStatus.values) status: 0,
     };
+    double totalOvertimeHours = 0;
 
     for (final MapEntry<DateTime, AttendanceStatus> entry in marks.entries) {
       if (entry.key.year == month.year && entry.key.month == month.month) {
@@ -49,9 +55,16 @@ class PdfReportService {
       }
     }
 
+    for (final MapEntry<DateTime, double> entry in overtimeHours.entries) {
+      if (entry.key.year == month.year && entry.key.month == month.month) {
+        totalOvertimeHours += entry.value;
+      }
+    }
+
     return <String, dynamic>{
       'counts': counts,
       'total': counts.values.fold(0, (int sum, int count) => sum + count),
+      'totalOvertimeHours': totalOvertimeHours,
     };
   }
 
@@ -65,6 +78,8 @@ class PdfReportService {
     final Map<AttendanceStatus, int> counts =
         summary['counts'] as Map<AttendanceStatus, int>;
     final int total = summary['total'] as int;
+    final double totalOvertimeHours =
+        summary['totalOvertimeHours'] as double? ?? 0;
     final String monthLabel = monthName(month.month);
 
     return pw.Page(
@@ -85,26 +100,9 @@ class PdfReportService {
             pw.SizedBox(height: 20),
             _buildCalendar(month, attendanceMarks, shiftSubtypes, overtimeHours),
             pw.SizedBox(height: 20),
-            pw.Table(
-              border: pw.TableBorder.all(),
-              children: [
-                pw.TableRow(
-                  children: [
-                    _cell('Type', isHeader: true),
-                    _cell('Count', isHeader: true),
-                  ],
-                ),
-                for (final AttendanceStatus status in AttendanceStatus.values)
-                  pw.TableRow(
-                    children: [
-                      pw.Padding(
-                        padding: const pw.EdgeInsets.all(10),
-                        child: _statusWithColor(status),
-                      ),
-                      _cell('${counts[status] ?? 0}'),
-                    ],
-                  ),
-              ],
+            _buildSummarySection(
+              counts,
+              totalOvertimeHours,
             ),
             pw.SizedBox(height: 20),
             pw.Text(
@@ -120,6 +118,109 @@ class PdfReportService {
         );
       },
     );
+  }
+
+  pw.Widget _buildSummarySection(
+    Map<AttendanceStatus, int> counts,
+    double totalOvertimeHours,
+  ) {
+    return pw.Column(
+      children: [
+        pw.Row(
+          children: [
+            pw.Expanded(
+              child: _summaryCell(
+                AttendanceStatus.present.label,
+                _formatDayCount(counts[AttendanceStatus.present] ?? 0),
+                AttendanceStatus.present,
+              ),
+            ),
+            pw.SizedBox(width: 8),
+            pw.Expanded(
+              child: _summaryCell(
+                AttendanceStatus.absent.label,
+                _formatDayCount(counts[AttendanceStatus.absent] ?? 0),
+                AttendanceStatus.absent,
+              ),
+            ),
+            pw.SizedBox(width: 8),
+            pw.Expanded(
+              child: _summaryCell(
+                AttendanceStatus.halfDay.label,
+                _formatDayCount(counts[AttendanceStatus.halfDay] ?? 0),
+                AttendanceStatus.halfDay,
+              ),
+            ),
+          ],
+        ),
+        pw.SizedBox(height: 8),
+        pw.Row(
+          children: [
+            pw.Expanded(
+              child: _summaryCell(
+                AttendanceStatus.overtime.label,
+                _formatHourCount(totalOvertimeHours),
+                AttendanceStatus.overtime,
+              ),
+            ),
+            pw.SizedBox(width: 8),
+            pw.Expanded(
+              child: _summaryCell(
+                AttendanceStatus.shift.label,
+                _formatDayCount(counts[AttendanceStatus.shift] ?? 0),
+                AttendanceStatus.shift,
+              ),
+            ),
+            pw.SizedBox(width: 8),
+            pw.Expanded(
+              child: _summaryCell(
+                AttendanceStatus.holiday.label,
+                _formatDayCount(counts[AttendanceStatus.holiday] ?? 0),
+                AttendanceStatus.holiday,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  pw.Widget _summaryCell(
+    String label,
+    String value,
+    AttendanceStatus status,
+  ) {
+    return pw.Container(
+      padding: const pw.EdgeInsets.all(10),
+      decoration: pw.BoxDecoration(
+        border: pw.Border.all(width: 0.7),
+      ),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          _statusWithColor(status),
+          pw.SizedBox(height: 6),
+          pw.Text(
+            value,
+            style: pw.TextStyle(
+              fontSize: 12,
+              fontWeight: pw.FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatDayCount(int count) {
+    return '$count ${count == 1 ? 'day' : 'days'}';
+  }
+
+  String _formatHourCount(double hours) {
+    final String value = hours % 1 == 0
+        ? hours.toStringAsFixed(0)
+        : hours.toStringAsFixed(1);
+    return '$value hrs';
   }
 
   pw.Widget _cell(String text, {bool isHeader = false}) {
