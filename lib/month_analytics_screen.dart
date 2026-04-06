@@ -264,7 +264,8 @@ class _MonthAnalyticsScreenState extends State<MonthAnalyticsScreen> {
                         Expanded(
                           child: _AnalyticsLegendItem(
                             color: AttendanceStatus.overtime.color,
-                            label: 'OT : ${summary.overtimeCount} days',
+                            label:
+                                'OT : ${summary.totalOvertimeHoursLabel} hrs',
                             textColor: Colors.black87,
                           ),
                         ),
@@ -592,11 +593,18 @@ class _MonthAnalyticsScreenState extends State<MonthAnalyticsScreen> {
     final Map<AttendanceStatus, int> counts = <AttendanceStatus, int>{
       for (final AttendanceStatus status in AttendanceStatus.values) status: 0,
     };
+    double totalOvertimeHours = 0;
 
     for (final MapEntry<DateTime, AttendanceStatus> entry
         in widget.attendanceMarks.entries) {
       if (entry.key.year == month.year && entry.key.month == month.month) {
         counts[entry.value] = (counts[entry.value] ?? 0) + 1;
+      }
+    }
+
+    for (final MapEntry<DateTime, double> entry in widget.overtimeHours.entries) {
+      if (entry.key.year == month.year && entry.key.month == month.month) {
+        totalOvertimeHours += entry.value;
       }
     }
 
@@ -626,6 +634,9 @@ class _MonthAnalyticsScreenState extends State<MonthAnalyticsScreen> {
       absentCount: absentCount,
       halfDayCount: halfDayCount,
       overtimeCount: overtimeCount,
+      totalOvertimeHoursLabel: totalOvertimeHours % 1 == 0
+          ? totalOvertimeHours.toStringAsFixed(0)
+          : totalOvertimeHours.toStringAsFixed(1),
       attendancePercentage: percentage.toStringAsFixed(2),
     );
   }
@@ -694,6 +705,7 @@ class _MonthSummary {
     required this.absentCount,
     required this.halfDayCount,
     required this.overtimeCount,
+    required this.totalOvertimeHoursLabel,
     required this.attendancePercentage,
   });
 
@@ -703,6 +715,7 @@ class _MonthSummary {
   final int absentCount;
   final int halfDayCount;
   final int overtimeCount;
+  final String totalOvertimeHoursLabel;
   final String attendancePercentage;
 }
 
