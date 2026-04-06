@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
-import 'pdf_report_service.dart';
+
 import 'attendance_models.dart';
 import 'pdf_preview_screen.dart';
+import 'pdf_report_service.dart';
 
 class SelectMonthsScreen extends StatefulWidget {
   final Map<DateTime, AttendanceStatus> attendanceMarks;
@@ -20,77 +21,82 @@ class SelectMonthsScreen extends StatefulWidget {
 }
 
 class _SelectMonthsScreenState extends State<SelectMonthsScreen> {
-  final List<DateTime> selectedMonths = [];
+  final List<DateTime> selectedMonths = <DateTime>[];
 
   List<DateTime> getMonths() {
-    final now = DateTime.now();
-    return List.generate(12, (i) {
+    final DateTime now = DateTime.now();
+    return List<DateTime>.generate(12, (int i) {
       return DateTime(now.year, now.month - i);
     });
   }
 
-  /// ✅ Month compare fix
   bool isSameMonth(DateTime a, DateTime b) {
     return a.year == b.year && a.month == b.month;
   }
 
   @override
   Widget build(BuildContext context) {
-    final months = getMonths();
+    final List<DateTime> months = getMonths();
 
     return Scaffold(
-      appBar: AppBar(title: const Text("Select Months")),
-
+      appBar: AppBar(title: const Text('Select Months')),
       body: ListView(
-        children: months.map((month) {
-          final label = "${monthName(month.month)} ${month.year}";
-
-          final isSelected = selectedMonths.any((m) => isSameMonth(m, month));
+        children: months.map((DateTime month) {
+          final String label = '${monthName(month.month)} ${month.year}';
+          final bool isSelected =
+              selectedMonths.any((DateTime m) => isSameMonth(m, month));
 
           return CheckboxListTile(
             title: Text(label),
             value: isSelected,
-            onChanged: (val) {
+            onChanged: (bool? val) {
               setState(() {
                 if (val == true) {
                   selectedMonths.add(month);
                 } else {
-                  selectedMonths.removeWhere((m) => isSameMonth(m, month));
+                  selectedMonths.removeWhere(
+                    (DateTime m) => isSameMonth(m, month),
+                  );
                 }
               });
             },
           );
         }).toList(),
       ),
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Theme.of(context).primaryColor,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+            ),
+            onPressed: selectedMonths.isEmpty
+                ? null
+                : () async {
+                    final NavigatorState navigator = Navigator.of(context);
+                    final dynamic file =
+                        await PdfReportService().generateReportFromMarks(
+                      months: selectedMonths,
+                      attendanceMarks: widget.attendanceMarks,
+                      shiftSubtypes: widget.shiftSubtypes,
+                      overtimeHours: widget.overtimeHours,
+                    );
 
-      bottomNavigationBar: Padding(
-        padding: const EdgeInsets.all(12),
-        child: ElevatedButton(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Theme.of(context).primaryColor, // 👈 AppBar color
-            foregroundColor: Colors.white, // 👈 Text white
-            padding: const EdgeInsets.symmetric(vertical: 14),
+                    if (!mounted) {
+                      return;
+                    }
+
+                    navigator.push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => PdfPreviewScreen(file: file),
+                      ),
+                    );
+                  },
+            child: const Text('Preview Report'),
           ),
-          onPressed: selectedMonths.isEmpty
-              ? null
-              : () async {
-                  final navigator = Navigator.of(context);
-                  final file = await PdfReportService().generateReportFromMarks(
-                    months: selectedMonths,
-                    attendanceMarks: widget.attendanceMarks,
-                    shiftSubtypes: widget.shiftSubtypes,
-                    overtimeHours: widget.overtimeHours,
-                  );
-
-                  if (!mounted) return;
-
-                  navigator.push(
-                    MaterialPageRoute(
-                      builder: (_) => PdfPreviewScreen(file: file),
-                    ),
-                  );
-                },
-          child: const Text("Preview Report"),
         ),
       ),
     );
