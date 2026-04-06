@@ -92,7 +92,9 @@ class _AttendanceHomeScreenState extends State<AttendanceHomeScreen> {
                 context,
                 MaterialPageRoute(
                   builder: (_) => SelectMonthsScreen(
-                    attendanceMarks: _attendanceMarks, // ✅ FIX HERE
+                    attendanceMarks: _attendanceMarks,
+                    shiftSubtypes: _shiftSubtypes,
+                    overtimeHours: _overtimeHours,
                   ),
                 ),
               );
@@ -234,8 +236,12 @@ class _AttendanceHomeScreenState extends State<AttendanceHomeScreen> {
                 child: _StatusStrip(
                   palette: palette,
                   activeFilter: _activeFilter,
-                  onFilterTap: (AttendanceStatus status) {
+                  onFilterTap: (AttendanceStatus? status) {
                     setState(() {
+                      if (status == null) {
+                        _activeFilter = null;
+                        return;
+                      }
                       _activeFilter = _activeFilter == status ? null : status;
                     });
                   },
@@ -693,11 +699,12 @@ class _StatusStrip extends StatelessWidget {
 
   final CalendarPalette palette;
   final AttendanceStatus? activeFilter;
-  final ValueChanged<AttendanceStatus> onFilterTap;
+  final ValueChanged<AttendanceStatus?> onFilterTap;
 
   @override
   Widget build(BuildContext context) {
     final List<_StripItemData> items = <_StripItemData>[
+      _StripItemData('All', const Color(0xFF1F1F1F), null),
       _StripItemData('Present', palette.presentColor, AttendanceStatus.present),
       _StripItemData('Absent', palette.absentColor, AttendanceStatus.absent),
       _StripItemData(
@@ -736,7 +743,10 @@ class _StatusStrip extends StatelessWidget {
                               : Colors.white,
                           fontSize: 8,
                           fontWeight: FontWeight.w600,
-                          decoration: activeFilter == item.status
+                          decoration: activeFilter == item.status &&
+                                  item.status != null
+                              ? TextDecoration.underline
+                              : activeFilter == null && item.status == null
                               ? TextDecoration.underline
                               : TextDecoration.none,
                         ),
@@ -757,5 +767,6 @@ class _StripItemData {
 
   final String label;
   final Color color;
-  final AttendanceStatus status;
+  final AttendanceStatus? status;
 }
+
