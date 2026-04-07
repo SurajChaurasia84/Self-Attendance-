@@ -549,9 +549,7 @@ class _MonthAnalyticsScreenState extends State<MonthAnalyticsScreen> {
         ? 'Attendance cleared for ${selectedDate.day}/${selectedDate.month}/${selectedDate.year}'
         : '${result.status!.label} marked for ${selectedDate.day}/${selectedDate.month}/${selectedDate.year}';
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    _showSafeSnackBar(message);
   }
 
   Future<void> _downloadPdfReport(_MonthSummary summary) async {
@@ -571,15 +569,11 @@ class _MonthAnalyticsScreenState extends State<MonthAnalyticsScreen> {
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('PDF saved to Downloads')));
+      _showSafeSnackBar('PDF saved to Downloads');
     } catch (error) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Failed: $error')));
+      _showSafeSnackBar('Failed: $error');
     } finally {
       if (mounted) {
         setState(() {
@@ -587,6 +581,18 @@ class _MonthAnalyticsScreenState extends State<MonthAnalyticsScreen> {
         });
       }
     }
+  }
+
+  void _showSafeSnackBar(String message) {
+    final double bottomInset = MediaQuery.of(context).viewPadding.bottom;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        behavior: SnackBarBehavior.floating,
+        margin: EdgeInsets.fromLTRB(12, 12, 12, bottomInset + 12),
+      ),
+    );
   }
 
   _MonthSummary _buildSummary(DateTime month) {
